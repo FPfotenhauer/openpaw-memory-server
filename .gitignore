@@ -1,0 +1,6 @@
+.idea/
+openpaw-memory-server-2026-06-27/
+private/config.php
+private/backups/
+private/runtime/
+*.log
