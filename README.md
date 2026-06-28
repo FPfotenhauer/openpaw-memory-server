@@ -1,13 +1,14 @@
 # OpenPaw Memory Server
 
 Kleiner PHP/MariaDB-Memory-Server für OpenPaw/Paw. Der Fokus liegt auf robustem
-Speichern, Lesen und Suchen von Erinnerungen. Eine Chat-UI ist bewusst nicht
-Bestandteil dieses Projekts; spätere Clients wie Signal können dieselbe API
-nutzen.
+Speichern, Lesen und Suchen von Erinnerungen. Die Website bietet zunächst nur
+Startseite, Login und einen geschützten Chat-Platzhalter; spätere Clients wie
+Signal können dieselbe API nutzen.
 
 ## Architektur
 
-- `public/`: Webroot mit einem PHP-Front-Controller und `.htaccess`.
+- `public/`: Webroot mit Website-Front-Controller, API unter `public/api/`
+  und `.htaccess`.
 - `private/`: lokale Konfiguration, Runtime-Dateien und Backups. Diese Dateien
   gehören nicht in den öffentlichen Webroot.
 - `sql/`: MariaDB-Schema.
@@ -15,8 +16,10 @@ nutzen.
 - MariaDB ist die Primärdatenbank. SQLite bleibt nur ein möglicher späterer
   Fallback, falls wirklich nötig.
 
-Die API speichert Erinnerungen mit Text, Tags, Quelle, Confidence, Visibility
-und Zeitstempeln. Die Suche verwendet MariaDB-Fulltext; falls der Fulltext-Index
+Die Website stellt Startseite, Login und eine geschützte Chat-Platzhalterseite
+bereit. Die API bleibt davon getrennt und speichert Erinnerungen mit Text, Tags,
+Metadaten, Art, Wichtigkeit, Scope, Quelle, Confidence, Visibility und
+Zeitstempeln. Die Suche verwendet MariaDB-Fulltext; falls der Fulltext-Index
 nicht nutzbar ist, fällt die API auf einfache `LIKE`-Suche zurück.
 
 ## Realistische Webspace-Annahmen
@@ -39,6 +42,7 @@ Minimale Diagnosen ohne Upload:
 php -v
 php -m | grep -E 'pdo_mysql|mysqli|mbstring'
 php -l public/index.php
+php -l public/api/index.php
 ```
 
 ## Setup
@@ -69,6 +73,7 @@ Für Beispiele:
 
 ```bash
 export BASE_URL='<base-url>'
+export API_BASE_URL="${BASE_URL}/api"
 export OPENPAW_MEMORY_TOKEN='<token>'
 ```
 
@@ -77,7 +82,7 @@ Health:
 ```bash
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/health"
+  "${API_BASE_URL}/health"
 ```
 
 Erinnerung speichern:
@@ -86,8 +91,8 @@ Erinnerung speichern:
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"text":"Frank bevorzugt wartbare, kleine Lösungen.","tags":["frank","preference"],"source":"codex","confidence":1.0,"visibility":"private"}' \
-  "${BASE_URL}/memories"
+  -d '{"text":"Frank bevorzugt wartbare, kleine Lösungen.","tags":["frank","preference"],"metadata":{"topic":"architecture"},"kind":"preference","importance":0.8,"scope":"personal","source":"codex","source_ref":null,"confidence":1.0,"visibility":"private"}' \
+  "${API_BASE_URL}/memories"
 ```
 
 Erinnerungen lesen:
@@ -95,7 +100,7 @@ Erinnerungen lesen:
 ```bash
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/memories?limit=20&offset=0"
+  "${API_BASE_URL}/memories?limit=20&offset=0"
 ```
 
 Einzelne Erinnerung lesen:
@@ -103,7 +108,7 @@ Einzelne Erinnerung lesen:
 ```bash
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/memories/<id>"
+  "${API_BASE_URL}/memories/<id>"
 ```
 
 Suchen:
@@ -111,7 +116,7 @@ Suchen:
 ```bash
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/memories/search?q=wartbar%20klein&limit=10"
+  "${API_BASE_URL}/memories/search?q=wartbar%20klein&limit=10"
 ```
 
 Aktualisieren:
@@ -122,7 +127,7 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H 'Content-Type: application/json' \
   -d '{"tags":["frank","preference","architecture"]}' \
-  "${BASE_URL}/memories/<id>"
+  "${API_BASE_URL}/memories/<id>"
 ```
 
 Löschen:
@@ -131,7 +136,7 @@ Löschen:
 curl -fsS \
   -X DELETE \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/memories/<id>"
+  "${API_BASE_URL}/memories/<id>"
 ```
 
 Backup erstellen, wenn `backup.enabled` aktiv ist:
@@ -141,7 +146,7 @@ curl -fsS \
   -X POST \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
-  "${BASE_URL}/backups"
+  "${API_BASE_URL}/backups"
 ```
 
 Backups auflisten:
@@ -150,7 +155,7 @@ Backups auflisten:
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
-  "${BASE_URL}/backups"
+  "${API_BASE_URL}/backups"
 ```
 
 ## Datenmodell
@@ -162,9 +167,17 @@ Pflichtfeld beim Anlegen ist `text`. Alle anderen Felder haben Defaults.
   "id": "optional-client-id",
   "text": "Memory text",
   "tags": ["tag-a", "tag-b"],
+  "metadata": {
+    "topic": "example"
+  },
+  "kind": "note",
+  "importance": 0.5,
+  "scope": "personal",
   "source": "api",
+  "source_ref": null,
   "confidence": 1.0,
-  "visibility": "private"
+  "visibility": "private",
+  "observed_at": "2026-06-28T12:00:00Z"
 }
 ```
 

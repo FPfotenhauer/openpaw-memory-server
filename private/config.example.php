@@ -4,6 +4,13 @@ declare(strict_types=1);
 return [
     'auth_token' => 'replace-with-a-random-token-of-at-least-32-characters',
 
+    'site' => [
+        'enabled' => true,
+        'session_name' => 'openpaw_site_session',
+        'username' => 'replace_with_login_name',
+        'password_hash' => 'replace_with_password_hash_from_password_hash',
+    ],
+
     'db' => [
         'host' => 'localhost',
         'name' => 'replace_with_database_name',

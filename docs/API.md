@@ -12,6 +12,7 @@ Codex, OpenPaw/Paw, Testskripten oder später einem Signal-Bridge-Prozess.
 
 ```bash
 export BASE_URL='<base-url>'
+export API_BASE_URL="${BASE_URL}/api"
 export OPENPAW_MEMORY_TOKEN='<token>'
 ```
 
@@ -29,7 +30,7 @@ Prüft, ob die API erreichbar ist und die Authentifizierung funktioniert.
 ```bash
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/health"
+  "${API_BASE_URL}/health"
 ```
 
 Antwort:
@@ -52,11 +53,19 @@ curl -fsS \
   -d '{
     "text": "Frank bevorzugt kleine, wartbare Lösungen.",
     "tags": ["frank", "preference", "architecture"],
+    "metadata": {
+      "topic": "architecture"
+    },
+    "kind": "preference",
+    "importance": 0.8,
+    "scope": "personal",
     "source": "codex",
+    "source_ref": null,
     "confidence": 1.0,
-    "visibility": "private"
+    "visibility": "private",
+    "observed_at": "2026-06-28T12:00:00Z"
   }' \
-  "${BASE_URL}/memories"
+  "${API_BASE_URL}/memories"
 ```
 
 Pflichtfeld:
@@ -67,16 +76,22 @@ Optionale Felder:
 
 - `id`: eigene ID, sonst erzeugt die API eine ID.
 - `tags`: Liste kurzer Tags.
+- `metadata`: JSON-Objekt für strukturierte Zusatzdaten.
+- `kind`: Art der Erinnerung, z. B. `note`, `preference`, `fact`, `task`.
+- `importance`: Zahl von `0.0` bis `1.0`.
+- `scope`: Geltungsbereich, z. B. `personal`, `project`, `system`.
 - `source`: Quelle, z. B. `codex`, `openpaw`, `signal`, `manual`.
+- `source_ref`: optionale Referenz auf Ursprung, z. B. Message-ID oder Dateiname.
 - `confidence`: Zahl von `0.0` bis `1.0`.
 - `visibility`: aktuell frei benannter Sichtbarkeitswert, Default `private`.
+- `observed_at`: Zeitpunkt der Beobachtung; Default ist der Erstellzeitpunkt.
 
 ## Erinnerungen auflisten
 
 ```bash
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/memories?limit=20&offset=0"
+  "${API_BASE_URL}/memories?limit=20&offset=0"
 ```
 
 Grenzen:
@@ -89,7 +104,7 @@ Grenzen:
 ```bash
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/memories/<id>"
+  "${API_BASE_URL}/memories/<id>"
 ```
 
 ## Erinnerungen suchen
@@ -97,7 +112,7 @@ curl -fsS \
 ```bash
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/memories/search?q=wartbar%20klein&limit=10"
+  "${API_BASE_URL}/memories/search?q=wartbar%20klein&limit=10"
 ```
 
 Die Suche verwendet MariaDB-Fulltext. Wenn Fulltext nicht verfügbar ist, nutzt
@@ -120,7 +135,7 @@ curl -fsS \
   -d '{
     "tags": ["frank", "preference", "architecture", "memory"]
   }' \
-  "${BASE_URL}/memories/<id>"
+  "${API_BASE_URL}/memories/<id>"
 ```
 
 ## Erinnerung löschen
@@ -129,7 +144,7 @@ curl -fsS \
 curl -fsS \
   -X DELETE \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
-  "${BASE_URL}/memories/<id>"
+  "${API_BASE_URL}/memories/<id>"
 ```
 
 Antwort:
@@ -153,7 +168,7 @@ curl -fsS \
   -X POST \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
-  "${BASE_URL}/backups"
+  "${API_BASE_URL}/backups"
 ```
 
 Die API schreibt eine JSON-Datei in das private Backup-Verzeichnis.
@@ -164,7 +179,7 @@ Die API schreibt eine JSON-Datei in das private Backup-Verzeichnis.
 curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
-  "${BASE_URL}/backups"
+  "${API_BASE_URL}/backups"
 ```
 
 ## Fehlerformat
