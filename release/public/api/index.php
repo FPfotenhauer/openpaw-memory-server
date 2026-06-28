@@ -10,7 +10,7 @@ function main(): void
 {
     try {
         $config = load_config();
-        send_security_headers();
+        send_security_headers($config);
         enforce_rate_limit($config);
         require_auth($config);
 
@@ -144,12 +144,18 @@ function request_path(): string
     return $path === '/' ? '/' : rtrim($path, '/');
 }
 
-function send_security_headers(): void
+function send_security_headers(array $config): void
 {
     header('Content-Type: application/json; charset=utf-8');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: no-referrer');
     header('Cache-Control: no-store');
+    if (($config['security']['csp_enabled'] ?? true) === true) {
+        header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+    }
+    if (($config['security']['hsts_enabled'] ?? false) === true && is_https()) {
+        header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    }
 }
 
 function require_auth(array $config): void
@@ -176,7 +182,8 @@ function enforce_rate_limit(array $config): void
     $dir = (string)($rate['runtime_dir'] ?? PROJECT_ROOT . '/private/runtime');
     ensure_private_dir($dir);
 
-    $key = hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . '|' . ($_SERVER['HTTP_AUTHORIZATION'] ?? ''));
+    cleanup_rate_files($dir, $window);
+    $key = hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . '|' . ($_SERVER['REQUEST_METHOD'] ?? 'GET') . '|' . request_path());
     $file = $dir . '/rate-' . $key . '.json';
     $now = time();
     $state = ['start' => $now, 'count' => 0];
@@ -193,6 +200,20 @@ function enforce_rate_limit(array $config): void
     file_put_contents($file, json_encode($state, JSON_THROW_ON_ERROR), LOCK_EX);
     if ($state['count'] > $limit) {
         error_response(429, 'rate limit exceeded');
+    }
+}
+
+function cleanup_rate_files(string $dir, int $window): void
+{
+    if (random_int(1, 50) !== 1) {
+        return;
+    }
+    $maxAge = max($window * 2, 300);
+    $now = time();
+    foreach (glob($dir . '/rate-*.json') ?: [] as $file) {
+        if (is_file($file) && $now - filemtime($file) > $maxAge) {
+            @unlink($file);
+        }
     }
 }
 
@@ -666,4 +687,10 @@ function json_response(int $status, array $body): never
 function error_response(int $status, string $message): never
 {
     json_response($status, ['error' => $message]);
+}
+
+function is_https(): bool
+{
+    return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 }

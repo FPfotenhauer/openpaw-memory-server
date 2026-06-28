@@ -51,19 +51,14 @@ Für Endanwender ist der Ordner `release/` vorgesehen. Er enthält die
 installierbaren Dateien mit `public/`, `private/`, `sql/`, `tools/` und `docs/`.
 Die ausführliche Anleitung steht in `docs/INSTALL.md`.
 
-1. Datenbanktabellen mit `sql/schema.mariadb.sql` anlegen.
-2. `private/config.example.php` lokal als `private/config.php` kopieren.
-3. In `private/config.php` einen langen Zufallstoken und die MariaDB-Zugangsdaten
-   eintragen.
-4. Webserver so konfigurieren, dass `public/` der Webroot ist.
-5. Falls das nicht möglich ist, `private/` zusätzlich per `.htaccess` sperren
+1. Release-Paket mit `scripts/build-release.sh` erzeugen.
+2. Dateien aus `release/` hochladen.
+3. Webserver so konfigurieren, dass `public/` der Webroot ist.
+4. Startseite öffnen und den Web-Installer ausfüllen.
+5. Falls Webroot-Trennung nicht möglich ist, `private/` zusätzlich per `.htaccess` sperren
    und vor dem Deployment prüfen, dass kein direkter Zugriff möglich ist.
 
-Token erzeugen:
-
-```bash
-openssl rand -hex 32
-```
+Der Web-Installer erzeugt API-Token und optional Backup-Token automatisch.
 
 ## API
 
@@ -223,10 +218,13 @@ Checkliste vor öffentlicher Nutzung:
 - Keine Domain, keine Hoster-Details und keine Secrets in README, Tests oder
   Beispieldateien eintragen.
 - HTTPS auf der Webserver-Seite erzwingen.
+- CSP ist standardmäßig aktiv. HSTS erst aktivieren, wenn HTTPS stabil geprüft
+  ist.
 - Langen Bearer-Token verwenden und regelmäßig erneuern.
 - Backup-Token getrennt vom API-Token setzen, falls Backups aktiviert werden.
 - `private/` darf nicht öffentlich abrufbar sein.
 - Rate Limit aktiviert lassen.
+- Login-Throttling aktiviert lassen.
 - Dateiberechtigungen für Config und Backups restriktiv setzen.
 - Backup-Dateien regelmäßig extern sichern und alte Backups bewusst löschen.
 

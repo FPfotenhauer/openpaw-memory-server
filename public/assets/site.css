@@ -263,6 +263,98 @@ h1 {
     background: var(--panel);
 }
 
+.installer {
+    width: min(100% - 32px, 760px);
+    margin: 48px auto;
+    padding: 28px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+}
+
+.installer h1 {
+    font-size: 2rem;
+    line-height: 1.12;
+}
+
+.installer h2 {
+    margin: 28px 0 8px;
+    font-size: 1.1rem;
+}
+
+.installer p {
+    color: var(--muted);
+    line-height: 1.55;
+}
+
+.installer form,
+.installer label {
+    display: grid;
+    gap: 10px;
+}
+
+.installer label {
+    margin-top: 14px;
+    color: var(--muted);
+    font-weight: 650;
+}
+
+.installer input:not([type="checkbox"]) {
+    min-height: 44px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0 12px;
+    font: inherit;
+}
+
+.installer .checkbox {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.installer button {
+    width: fit-content;
+    min-height: 44px;
+    margin-top: 22px;
+    border: 0;
+    border-radius: 6px;
+    padding: 0 18px;
+    background: var(--accent);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.installer pre,
+.installer textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px;
+    overflow: auto;
+    background: var(--surface);
+    color: var(--text);
+}
+
+.installer textarea {
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.errors {
+    border: 1px solid #d49a9a;
+    border-radius: 6px;
+    background: #fff5f5;
+    color: #8d2424;
+}
+
+.errors ul {
+    margin: 0;
+    padding: 14px 18px 14px 34px;
+}
+
 @media (max-width: 760px) {
     .site-header {
         padding: 0 18px;
@@ -299,5 +391,10 @@ h1 {
     .sidebar {
         border-right: 0;
         border-bottom: 1px solid var(--line);
+    }
+
+    .installer {
+        margin: 24px auto;
+        padding: 20px;
     }
 }

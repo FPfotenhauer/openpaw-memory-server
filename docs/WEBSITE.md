@@ -6,6 +6,7 @@ vorbereitet.
 ## Routen
 
 - `/`: Startseite / Landing-Page.
+- `/install`: einmaliger Web-Installer, nur solange keine Config existiert.
 - `/login`: Login für den privaten Webbereich.
 - `/chat`: geschützte Platzhalterseite für den späteren OpenPaw-Chat.
 - `/api/health`: API-Health-Check.

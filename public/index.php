@@ -7,6 +7,10 @@ main();
 
 function main(): void
 {
+    if (!config_exists()) {
+        redirect('/install');
+    }
+
     $config = load_config();
     start_site_session($config);
 
@@ -20,7 +24,7 @@ function main(): void
         handle_logout();
     }
 
-    send_site_headers();
+    send_site_headers($config);
 
     if ($path === '/' || $path === '/index') {
         render_page('OpenPaw', render_home(is_logged_in()));
@@ -39,12 +43,22 @@ function main(): void
 
 function load_config(): array
 {
-    $path = getenv('OPENPAW_MEMORY_CONFIG') ?: PROJECT_ROOT . '/private/config.php';
+    $path = config_path();
     if (!is_file($path)) {
         return ['site' => ['enabled' => false]];
     }
     $config = require $path;
     return is_array($config) ? $config : ['site' => ['enabled' => false]];
+}
+
+function config_exists(): bool
+{
+    return is_file(config_path());
+}
+
+function config_path(): string
+{
+    return getenv('OPENPAW_MEMORY_CONFIG') ?: PROJECT_ROOT . '/private/config.php';
 }
 
 function start_site_session(array $config): void
@@ -76,16 +90,31 @@ function request_path(): string
     return $path === '/' ? '/' : rtrim($path, '/');
 }
 
-function send_site_headers(): void
+function send_site_headers(array $config): void
 {
     header('Content-Type: text/html; charset=utf-8');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: no-referrer');
     header('Cache-Control: no-store');
+    if (($config['security']['csp_enabled'] ?? true) === true) {
+        header("Content-Security-Policy: default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'self'");
+    }
+    if (($config['security']['hsts_enabled'] ?? false) === true && is_https()) {
+        header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    }
 }
 
 function handle_login(array $config): never
 {
+    if (!csrf_valid((string)($_POST['csrf'] ?? ''))) {
+        $_SESSION['openpaw_login_error'] = 'Das Formular ist abgelaufen.';
+        redirect('/login');
+    }
+    if (login_rate_limited($config)) {
+        $_SESSION['openpaw_login_error'] = 'Zu viele Login-Versuche. Bitte später erneut versuchen.';
+        redirect('/login');
+    }
+
     $site = $config['site'] ?? [];
     $username = trim((string)($_POST['username'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
@@ -100,15 +129,20 @@ function handle_login(array $config): never
     ) {
         session_regenerate_id(true);
         $_SESSION['openpaw_logged_in'] = true;
+        clear_login_failures($config);
         redirect('/chat');
     }
 
+    record_login_failure($config);
     $_SESSION['openpaw_login_error'] = 'Login fehlgeschlagen.';
     redirect('/login');
 }
 
 function handle_logout(): never
 {
+    if (!csrf_valid((string)($_POST['csrf'] ?? ''))) {
+        redirect('/');
+    }
     $_SESSION = [];
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_destroy();
@@ -166,6 +200,7 @@ HTML;
 
 function render_login(): string
 {
+    $csrf = escape(csrf_token());
     $error = '';
     if (isset($_SESSION['openpaw_login_error'])) {
         $message = escape((string)$_SESSION['openpaw_login_error']);
@@ -178,6 +213,7 @@ function render_login(): string
     <form class="auth-form" method="post" action="login">
         <h1>Login</h1>
         {$error}
+        <input name="csrf" type="hidden" value="{$csrf}">
         <label>
             <span>Benutzer</span>
             <input name="username" type="text" autocomplete="username" required>
@@ -194,11 +230,13 @@ HTML;
 
 function render_chat(): string
 {
+    $csrf = escape(csrf_token());
     return <<<HTML
 <section class="app-shell">
     <aside class="sidebar">
         <h1>OpenPaw</h1>
         <form method="post" action="logout">
+            <input name="csrf" type="hidden" value="{$csrf}">
             <button class="text-button" type="submit">Logout</button>
         </form>
     </aside>
@@ -246,6 +284,91 @@ function redirect(string $path): never
 {
     header('Location: ' . $path, true, 303);
     exit;
+}
+
+function csrf_token(): string
+{
+    if (!isset($_SESSION['openpaw_csrf']) || !is_string($_SESSION['openpaw_csrf'])) {
+        $_SESSION['openpaw_csrf'] = bin2hex(random_bytes(16));
+    }
+    return $_SESSION['openpaw_csrf'];
+}
+
+function csrf_valid(string $token): bool
+{
+    return $token !== '' && hash_equals(csrf_token(), $token);
+}
+
+function login_rate_limited(array $config): bool
+{
+    $state = login_rate_state($config);
+    $limit = max(1, (int)($config['security']['login_max_attempts'] ?? 10));
+    return (int)$state['count'] >= $limit;
+}
+
+function record_login_failure(array $config): void
+{
+    [$file, $state] = login_rate_file_and_state($config);
+    $state['count'] = (int)$state['count'] + 1;
+    file_put_contents($file, json_encode($state, JSON_THROW_ON_ERROR), LOCK_EX);
+}
+
+function clear_login_failures(array $config): void
+{
+    [$file] = login_rate_file_and_state($config);
+    if (is_file($file)) {
+        @unlink($file);
+    }
+}
+
+function login_rate_state(array $config): array
+{
+    [, $state] = login_rate_file_and_state($config);
+    return $state;
+}
+
+function login_rate_file_and_state(array $config): array
+{
+    $window = max(60, (int)($config['security']['login_window_seconds'] ?? 600));
+    $dir = (string)($config['rate_limit']['runtime_dir'] ?? PROJECT_ROOT . '/private/runtime');
+    ensure_private_dir($dir);
+    cleanup_login_rate_files($dir, $window);
+
+    $key = hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . '|login');
+    $file = $dir . '/login-' . $key . '.json';
+    $now = time();
+    $state = ['start' => $now, 'count' => 0];
+    if (is_file($file)) {
+        $loaded = json_decode((string)file_get_contents($file), true);
+        if (is_array($loaded) && isset($loaded['start'], $loaded['count'])) {
+            $state = $loaded;
+        }
+    }
+    if ($now - (int)$state['start'] >= $window) {
+        $state = ['start' => $now, 'count' => 0];
+    }
+    return [$file, $state];
+}
+
+function cleanup_login_rate_files(string $dir, int $window): void
+{
+    if (random_int(1, 50) !== 1) {
+        return;
+    }
+    $maxAge = max($window * 2, 600);
+    $now = time();
+    foreach (glob($dir . '/login-*.json') ?: [] as $file) {
+        if (is_file($file) && $now - filemtime($file) > $maxAge) {
+            @unlink($file);
+        }
+    }
+}
+
+function ensure_private_dir(string $dir): void
+{
+    if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
+        throw new RuntimeException('cannot create private directory');
+    }
 }
 
 function escape(string $value): string

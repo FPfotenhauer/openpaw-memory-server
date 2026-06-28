@@ -23,8 +23,10 @@ mkdir -p \
 cp "${ROOT}/VERSION" "${RELEASE}/VERSION"
 cp "${ROOT}/LICENSE" "${RELEASE}/LICENSE"
 cp "${ROOT}/README.md" "${RELEASE}/PROJECT.md"
+cp "${ROOT}/.htaccess" "${RELEASE}/.htaccess"
 
 cp "${ROOT}/public/index.php" "${RELEASE}/public/index.php"
+cp "${ROOT}/public/install.php" "${RELEASE}/public/install.php"
 cp "${ROOT}/public/.htaccess" "${RELEASE}/public/.htaccess"
 cp "${ROOT}/public/api/index.php" "${RELEASE}/public/api/index.php"
 cp "${ROOT}/public/assets/site.css" "${RELEASE}/public/assets/site.css"
@@ -41,6 +43,7 @@ chmod +x "${RELEASE}/tools/init-db.php" "${RELEASE}/tools/update-db.php"
 
 cp "${ROOT}/docs/API.md" "${RELEASE}/docs/API.md"
 cp "${ROOT}/docs/INSTALL.md" "${RELEASE}/docs/INSTALL.md"
+cp "${ROOT}/docs/RELEASE.md" "${RELEASE}/docs/RELEASE.md"
 cp "${ROOT}/docs/WEBSITE.md" "${RELEASE}/docs/WEBSITE.md"
 cp "${ROOT}/docs/index.md" "${RELEASE}/docs/index.md"
 
@@ -60,16 +63,18 @@ kopiert werden können.
 
 ## Kurzablauf
 
-1. \`private/config.example.php\` nach \`private/config.php\` kopieren.
-2. \`private/config.php\` mit Tokens, Login und Datenbankdaten ausfüllen.
-3. Datenbank einrichten:
+1. Webroot auf \`public/\` zeigen lassen.
+2. Website unter \`/\` öffnen.
+3. Beim ersten Aufruf den Web-Installer ausfüllen.
+4. Angezeigte Tokens sicher speichern.
+5. Login und API unter \`/api/health\` testen.
 
-   \`\`\`bash
-   php tools/init-db.php
-   \`\`\`
+Falls der Web-Installer nicht verwendet werden kann, kann die Datenbank auch
+per CLI eingerichtet werden:
 
-4. Webroot auf \`public/\` zeigen lassen.
-5. Website unter \`/\` und API unter \`/api/health\` testen.
+\`\`\`bash
+php tools/init-db.php
+\`\`\`
 
 Spätere SQL-Updates liegen als \`.sql\`-Dateien in \`sql/migrations/\` und
 werden mit diesem Befehl angewendet:

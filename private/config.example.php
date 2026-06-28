@@ -33,6 +33,13 @@ return [
         'runtime_dir' => __DIR__ . '/runtime',
     ],
 
+    'security' => [
+        'csp_enabled' => true,
+        'hsts_enabled' => false,
+        'login_max_attempts' => 10,
+        'login_window_seconds' => 600,
+    ],
+
     'backup' => [
         'enabled' => false,
         'token' => '',

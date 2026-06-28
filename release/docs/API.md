@@ -39,7 +39,7 @@ Antwort:
 {
   "ok": true,
   "service": "openpaw-memory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "database": "mariadb"
 }
 ```

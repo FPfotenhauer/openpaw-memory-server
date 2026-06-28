@@ -69,56 +69,30 @@ Optional, aber nützlich:
    - `release/sql/`: Datenbankschema
    - `release/docs/`: Dokumentation
 
-2. Tokens erzeugen.
+2. Für die normale Installation müssen lokal keine Tokens und keine Config
+   erzeugt werden. Das übernimmt der Web-Installer beim ersten Aufruf.
 
-   Für die API:
+3. Nur wenn der Web-Installer nicht verwendet werden kann:
 
-   ```bash
-   openssl rand -hex 32
-   ```
+   - `release/private/config.example.php` als `release/private/config.php`
+     kopieren und ausfüllen.
+   - Datenbank manuell mit `release/sql/schema.mariadb.sql` oder
+     `php release/tools/init-db.php` einrichten.
+   - API-Token und Backup-Token selbst erzeugen.
+   - Passwort-Hash selbst erzeugen.
 
-   Für Backups nur dann, wenn Backups aktiviert werden:
-
-   ```bash
-   openssl rand -hex 32
-   ```
-
-3. Passwort-Hash für den Website-Login erzeugen.
-
-   ```bash
-   php -r 'echo password_hash("REPLACE_WITH_PASSWORD", PASSWORD_DEFAULT), PHP_EOL;'
-   ```
-
-   Das echte Passwort steht danach nicht in der Config. In die Config kommt nur
-   der erzeugte Hash.
-
-4. Config-Datei erstellen.
-
-   `release/private/config.example.php` als `release/private/config.php`
-   kopieren und ausfüllen:
-
-   - `auth_token`: API-Token
-   - `site.username`: Login-Name
-   - `site.password_hash`: Passwort-Hash
-   - `db.host`: Datenbankhost
-   - `db.name`: Datenbankname
-   - `db.user`: Datenbankbenutzer
-   - `db.password`: Datenbankpasswort
-   - `backup.enabled`: erst nach erfolgreichem Grundtest aktivieren
-   - `backup.token`: eigener Backup-Token, wenn Backups aktiviert werden
-
-   Wichtig: `private/config.php` nicht committen.
-
-## Datenbank einrichten
+## Datenbank vorbereiten
 
 1. Im Webspace-Kundenbereich eine MariaDB-Datenbank anlegen.
 2. Datenbankname, Benutzer, Passwort und Host notieren.
-3. Entweder SQL-Datei `release/sql/schema.mariadb.sql` in die Datenbank
-   importieren oder das Setup-Skript ausführen:
+3. Noch keine Tabellen anlegen, wenn der Web-Installer genutzt wird. Der
+   Installer richtet die Tabelle beim ersten Aufruf ein.
 
-   ```bash
-   php release/tools/init-db.php
-   ```
+Alternative ohne Web-Installer:
+
+```bash
+php release/tools/init-db.php
+```
 
 Das Schema legt die Tabelle `memories` an. Diese enthält unter anderem:
 
@@ -137,7 +111,7 @@ Das Schema legt die Tabelle `memories` an. Diese enthält unter anderem:
 
 Empfohlene Variante:
 
-1. Den Inhalt des Projektordners auf den Webspace hochladen.
+1. Den Inhalt des Release-Pakets auf den Webspace hochladen.
 2. Den Webroot der Website auf den Ordner `public/` im hochgeladenen
    Release-Paket zeigen lassen.
 3. Prüfen, dass `private/`, `sql/`, `tools/` und `docs/` nicht öffentlich
@@ -148,7 +122,7 @@ Falls der Webroot nicht auf `public/` zeigen kann:
 1. Release-Paket so hochladen, dass `public/index.php` als Einstieg erreichbar
    ist.
 2. Sicherstellen, dass `private/` nicht abrufbar ist.
-3. Die vorhandene `private/.htaccess` schützt zusätzlich, ersetzt aber keine
+3. Die vorhandenen `.htaccess`-Dateien schützen zusätzlich, ersetzen aber keine
    sorgfältige Prüfung.
 
 Nicht hochladen oder nicht öffentlich erreichbar machen:
@@ -158,15 +132,39 @@ Nicht hochladen oder nicht öffentlich erreichbar machen:
 - alte Prototypen
 - Backups außerhalb des vorgesehenen privaten Backup-Ordners
 
+Nach dem Upload müssen diese Pfade mit `403` oder `404` antworten und dürfen
+keinen Dateiinhalt anzeigen:
+
+- `/private/config.php`
+- `/private/config.example.php`
+- `/tools/init-db.php`
+- `/sql/schema.mariadb.sql`
+- `/docs/INSTALL.md`
+- `/.git/`
+- `/release/`
+- `/VERSION`
+
+Wenn einer dieser Pfade Inhalt anzeigt, ist der Webroot oder der
+Verzeichnisschutz falsch eingerichtet.
+
 ## Erste Prüfung im Browser
 
 Nach dem Upload:
 
 1. Startseite öffnen: `/`
-2. Login öffnen: `/login`
-3. Mit dem konfigurierten Benutzer anmelden.
-4. Prüfen, ob `/chat` nach Login erreichbar ist.
-5. Logout testen.
+2. Wenn noch keine Config existiert, erscheint automatisch der Installer.
+3. Datenbankdaten, Loginname und Website-Passwort eintragen.
+4. Installation starten.
+5. Den angezeigten API-Token und optionalen Backup-Token sicher speichern.
+6. Login öffnen: `/login`
+7. Mit dem konfigurierten Benutzer anmelden.
+8. Prüfen, ob `/chat` nach Login erreichbar ist.
+9. Logout testen.
+
+Wenn der Installer keine Config schreiben kann:
+
+- Die angezeigte Config manuell als `private/config.php` speichern.
+- Danach die Startseite neu laden.
 
 Wenn die Startseite funktioniert, aber Login nicht:
 
@@ -194,7 +192,7 @@ curl -fsS \
 Erwartung:
 
 ```json
-{"ok":true,"service":"openpaw-memory","version":"0.2.0","database":"mariadb"}
+{"ok":true,"service":"openpaw-memory","version":"0.3.0","database":"mariadb"}
 ```
 
 Wenn der Health-Check `401` liefert:
@@ -287,10 +285,13 @@ Vor produktiver Nutzung:
 - `private/config.php` ist nicht öffentlich abrufbar.
 - `private/backups/` ist nicht öffentlich abrufbar.
 - Die Website läuft über HTTPS.
+- CSP bleibt aktiviert.
+- HSTS erst aktivieren, wenn HTTPS stabil funktioniert.
 - Der API-Token ist lang und zufällig.
 - Der Backup-Token ist lang, zufällig und getrennt vom API-Token.
 - Die Datenbankzugangsdaten stehen nur in `private/config.php`.
 - `backup.enabled` bleibt aus, bis Backups wirklich gebraucht werden.
+- Login-Throttling bleibt aktiviert.
 - Alte Testdaten wurden gelöscht oder bewusst behalten.
 
 ## Typische Fehler
