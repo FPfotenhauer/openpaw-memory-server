@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 const PROJECT_ROOT = __DIR__ . '/..';
+const INSTALL_CSRF_TTL_SECONDS = 7200;
 
 main();
 
@@ -22,14 +23,14 @@ function main(): void
         handle_install();
     }
 
-    $_SESSION['install_csrf'] = bin2hex(random_bytes(16));
+    ensure_install_csrf();
     render_page('Installation', render_form([], []));
 }
 
 function handle_install(): never
 {
     $errors = [];
-    if (!hash_equals((string)($_SESSION['install_csrf'] ?? ''), (string)($_POST['csrf'] ?? ''))) {
+    if (!install_csrf_valid((string)($_POST['csrf'] ?? ''))) {
         $errors[] = 'Das Formular ist abgelaufen. Bitte erneut versuchen.';
     }
 
@@ -58,7 +59,7 @@ function handle_install(): never
 
     if ($errors !== []) {
         record_install_attempt();
-        $_SESSION['install_csrf'] = bin2hex(random_bytes(16));
+        generate_install_csrf();
         render_page('Installation', render_form($input, $errors));
     }
 
@@ -75,7 +76,7 @@ function handle_install(): never
         ensure_private_dirs();
     } catch (Throwable $exception) {
         record_install_attempt();
-        $_SESSION['install_csrf'] = bin2hex(random_bytes(16));
+        generate_install_csrf();
         $errors[] = 'Installation fehlgeschlagen: ' . $exception->getMessage();
         render_page('Installation', render_form($input, $errors));
     }
@@ -307,6 +308,7 @@ function render_page(string $title, string $body): never
 function start_install_session(): void
 {
     session_name('openpaw_install_session');
+    ini_set('session.gc_maxlifetime', (string)INSTALL_CSRF_TTL_SECONDS);
     session_set_cookie_params([
         'lifetime' => 0,
         'path' => '/',
@@ -315,6 +317,33 @@ function start_install_session(): void
         'samesite' => 'Strict',
     ]);
     session_start();
+}
+
+function ensure_install_csrf(): void
+{
+    $issuedAt = (int)($_SESSION['install_csrf_issued_at'] ?? 0);
+    $hasToken = isset($_SESSION['install_csrf']) && is_string($_SESSION['install_csrf']);
+    if (!$hasToken || time() - $issuedAt > INSTALL_CSRF_TTL_SECONDS) {
+        generate_install_csrf();
+    }
+}
+
+function generate_install_csrf(): void
+{
+    $_SESSION['install_csrf'] = bin2hex(random_bytes(16));
+    $_SESSION['install_csrf_issued_at'] = time();
+}
+
+function install_csrf_valid(string $token): bool
+{
+    if ($token === '' || !isset($_SESSION['install_csrf']) || !is_string($_SESSION['install_csrf'])) {
+        return false;
+    }
+    $issuedAt = (int)($_SESSION['install_csrf_issued_at'] ?? 0);
+    if ($issuedAt <= 0 || time() - $issuedAt > INSTALL_CSRF_TTL_SECONDS) {
+        return false;
+    }
+    return hash_equals($_SESSION['install_csrf'], $token);
 }
 
 function send_headers(): void

@@ -320,7 +320,7 @@ function search_memories(PDO $pdo, string $query): array
     if ($terms === []) {
         return [];
     }
-    $booleanQuery = implode(' ', array_map(static fn(string $term): string => '+' . $term . '*', $terms));
+    $booleanQuery = implode(' ', array_map(static fn(string $term): string => '+' . escape_boolean_search_term($term) . '*', $terms));
     try {
         $statement = $pdo->prepare(
             'SELECT *, MATCH(text, tags_text, source, kind, scope, source_ref) AGAINST (:query IN BOOLEAN MODE) AS score
@@ -342,10 +342,15 @@ function like_search_memories(PDO $pdo, array $terms, int $limit): array
 {
     $where = [];
     $params = [];
+    $columns = ['text', 'tags_text', 'source', 'kind', 'scope', 'source_ref'];
     foreach ($terms as $index => $term) {
-        $name = 'term' . $index;
-        $where[] = "(text LIKE :$name OR tags_text LIKE :$name OR source LIKE :$name OR kind LIKE :$name OR scope LIKE :$name OR source_ref LIKE :$name)";
-        $params[$name] = '%' . $term . '%';
+        $termWhere = [];
+        foreach ($columns as $column) {
+            $name = 'term' . $index . '_' . $column;
+            $termWhere[] = "$column LIKE :$name";
+            $params[$name] = '%' . escape_like_term($term) . '%';
+        }
+        $where[] = '(' . implode(' OR ', $termWhere) . ')';
     }
     $sql = 'SELECT * FROM memories WHERE ' . implode(' OR ', $where) . ' ORDER BY updated_at DESC LIMIT :limit';
     $statement = $pdo->prepare($sql);
@@ -355,6 +360,16 @@ function like_search_memories(PDO $pdo, array $terms, int $limit): array
     $statement->bindValue('limit', $limit, PDO::PARAM_INT);
     $statement->execute();
     return array_map('row_to_memory', $statement->fetchAll());
+}
+
+function escape_boolean_search_term(string $term): string
+{
+    return preg_replace('/[+\-><()~*:"&|@]+/', '', $term) ?: $term;
+}
+
+function escape_like_term(string $term): string
+{
+    return addcslashes($term, "\\%_");
 }
 
 function update_memory(PDO $pdo, array $config, string $id, array $payload): ?array

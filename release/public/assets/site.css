@@ -78,7 +78,7 @@ p {
 }
 
 .op-window {
-    width: min(980px, 100%);
+    width: min(1180px, 100%);
     min-height: 0;
     border: 1px solid var(--line);
     border-radius: 24px;
@@ -299,15 +299,15 @@ p {
 
 .op-hero {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 350px;
-    gap: 34px;
+    grid-template-columns: minmax(0, 1.08fr) minmax(350px, 0.92fr);
+    gap: 52px;
     align-items: center;
     min-height: 0;
     padding: 42px 50px 48px;
 }
 
 .op-copy {
-    max-width: 650px;
+    max-width: 720px;
 }
 
 .op-eyebrow {
@@ -322,7 +322,7 @@ p {
 
 .op-copy h1 {
     margin: 0;
-    max-width: 560px;
+    max-width: 660px;
     font-size: clamp(2.45rem, 4.4vw, 4.05rem);
     line-height: 0.96;
     letter-spacing: 0;
@@ -331,7 +331,7 @@ p {
 }
 
 .op-copy > p:not(.op-eyebrow) {
-    max-width: 500px;
+    max-width: 560px;
     margin: 20px 0 0;
     color: var(--muted);
     font-size: 0.94rem;
@@ -639,28 +639,31 @@ p {
 }
 
 .installer {
-    width: min(100% - 32px, 760px);
-    margin: 48px auto;
-    padding: 28px;
+    width: min(100% - 28px, 780px);
+    margin: 24px auto;
+    padding: 18px;
     border: 1px solid var(--line);
-    border-radius: 20px;
+    border-radius: 16px;
     background: rgba(18, 14, 9, 0.95);
+    font-size: 0.86rem;
 }
 
 .installer h1 {
     margin-top: 0;
-    font-size: 2rem;
-    line-height: 1.12;
+    margin-bottom: 10px;
+    font-size: 1.45rem;
+    line-height: 1.08;
 }
 
 .installer h2 {
-    margin: 28px 0 8px;
-    font-size: 1.1rem;
+    margin: 18px 0 6px;
+    font-size: 0.95rem;
 }
 
 .installer p {
     color: var(--muted);
-    line-height: 1.55;
+    line-height: 1.45;
+    margin: 8px 0;
 }
 
 .installer a {
@@ -670,20 +673,32 @@ p {
 .installer form,
 .installer label {
     display: grid;
-    gap: 10px;
+    gap: 6px;
+}
+
+.installer form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 14px;
+}
+
+.installer form h2,
+.installer .checkbox,
+.installer button {
+    grid-column: 1 / -1;
 }
 
 .installer label {
-    margin-top: 14px;
+    margin-top: 9px;
     color: var(--muted);
     font-weight: 650;
+    font-size: 0.82rem;
 }
 
 .installer input:not([type="checkbox"]) {
-    min-height: 44px;
+    min-height: 34px;
     border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 0 12px;
+    border-radius: 10px;
+    padding: 0 10px;
     background: #0c0a07;
     color: var(--text);
 }
@@ -696,11 +711,11 @@ p {
 
 .installer button {
     width: fit-content;
-    min-height: 44px;
-    margin-top: 22px;
+    min-height: 36px;
+    margin-top: 14px;
     border: 0;
     border-radius: 999px;
-    padding: 0 18px;
+    padding: 0 15px;
     background: var(--accent);
     color: #1b1005;
     font: inherit;
@@ -712,11 +727,12 @@ p {
 .installer textarea {
     width: 100%;
     border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 14px;
+    border-radius: 10px;
+    padding: 10px;
     overflow: auto;
     background: #0c0a07;
     color: var(--text);
+    font-size: 0.78rem;
 }
 
 .installer textarea {
@@ -726,14 +742,14 @@ p {
 
 .errors {
     border: 1px solid rgba(255, 124, 124, 0.55);
-    border-radius: 12px;
+    border-radius: 10px;
     background: rgba(255, 124, 124, 0.08);
     color: var(--danger);
 }
 
 .errors ul {
     margin: 0;
-    padding: 14px 18px 14px 34px;
+    padding: 10px 14px 10px 28px;
 }
 
 @media (max-width: 900px) {
@@ -809,6 +825,12 @@ p {
     .chat-logout {
         left: 22px;
         bottom: 20px;
+    }
+}
+
+@media (max-width: 760px) {
+    .installer form {
+        grid-template-columns: 1fr;
     }
 }
 
