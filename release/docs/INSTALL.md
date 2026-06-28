@@ -160,6 +160,13 @@ Nach dem Upload:
 7. Mit dem konfigurierten Benutzer anmelden.
 8. Prüfen, ob `/chat` nach Login erreichbar ist.
 9. Logout testen.
+10. Prüfen, dass `/install` danach nur noch „Bereits installiert“ zeigt.
+
+Wichtig: Den Web-Installer nicht unbeaufsichtigt öffentlich online lassen.
+Nach dem Upload direkt installieren oder den Webspace bis zur Installation
+geschützt halten. Der Installer ist zwar rate-limitiert und nach erfolgreicher
+Installation gesperrt, sollte aber nicht über längere Zeit offen im Netz
+stehen.
 
 Wenn der Installer keine Config schreiben kann:
 
@@ -292,6 +299,7 @@ Vor produktiver Nutzung:
 - Die Datenbankzugangsdaten stehen nur in `private/config.php`.
 - `backup.enabled` bleibt aus, bis Backups wirklich gebraucht werden.
 - Login-Throttling bleibt aktiviert.
+- Installer-Throttling bleibt aktiviert.
 - Alte Testdaten wurden gelöscht oder bewusst behalten.
 
 ## Typische Fehler

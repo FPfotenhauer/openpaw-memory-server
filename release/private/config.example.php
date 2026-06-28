@@ -38,6 +38,8 @@ return [
         'hsts_enabled' => false,
         'login_max_attempts' => 10,
         'login_window_seconds' => 600,
+        'install_max_attempts' => 10,
+        'install_window_seconds' => 600,
     ],
 
     'backup' => [

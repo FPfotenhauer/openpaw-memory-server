@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><radialGradient id="bodyg" gradientUnits="userSpaceOnUse" cx="60" cy="76" r="56" fx="47" fy="49"><stop offset="0" stop-color="#ffd089"></stop><stop offset="1" stop-color="#f49a24"></stop></radialGradient><radialGradient id="tileg" gradientUnits="userSpaceOnUse" cx="60" cy="66" r="96" fx="38" fy="26"><stop offset="0" stop-color="#2c2216"></stop><stop offset="1" stop-color="#15110b"></stop></radialGradient></defs><rect x="0" y="0" width="120" height="120" rx="26" fill="url(#tileg)"></rect><rect x="1.4" y="1.4" width="117.2" height="117.2" rx="25" fill="none" stroke="rgba(255,180,84,0.16)" stroke-width="1.2"></rect><g transform="translate(12,13.8) scale(0.8)">
+    <line x1="53" y1="46" x2="36" y2="17" stroke="#ffb454" stroke-width="5" stroke-linecap="round"></line>
+    <line x1="67" y1="46" x2="84" y2="17" stroke="#ffb454" stroke-width="5" stroke-linecap="round"></line>
+    <circle cx="35" cy="14" r="8" fill="#ffb454"></circle>
+    <circle cx="85" cy="14" r="8" fill="#ffb454"></circle>
+    <ellipse cx="44" cy="110" rx="10.5" ry="8" fill="#ef9a23"></ellipse>
+    <ellipse cx="76" cy="110" rx="10.5" ry="8" fill="#ef9a23"></ellipse>
+    <ellipse cx="60" cy="69" rx="40" ry="41" fill="url(#bodyg)"></ellipse>
+    <ellipse cx="38" cy="82" rx="7" ry="4.5" fill="#b8560a" opacity="0.28"></ellipse>
+    <ellipse cx="82" cy="82" rx="7" ry="4.5" fill="#b8560a" opacity="0.28"></ellipse>
+    <ellipse cx="48.5" cy="63.5" rx="10.5" ry="13.5" fill="#1a1206"></ellipse>
+    <ellipse cx="71.5" cy="63.5" rx="10.5" ry="13.5" fill="#1a1206"></ellipse>
+    <circle cx="47" cy="57" r="4.2" fill="#fff"></circle>
+    <circle cx="70" cy="57" r="4.2" fill="#fff"></circle>
+    <circle cx="43" cy="70" r="2" fill="#fff" opacity="0.6"></circle>
+    <circle cx="77" cy="70" r="2" fill="#fff" opacity="0.6"></circle>
+    <path d="M53 84 Q60 95 67 84 Z" fill="#1a1206"></path></g></svg>

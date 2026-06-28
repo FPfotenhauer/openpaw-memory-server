@@ -15,6 +15,10 @@ function main(): void
     }
 
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+        if (install_rate_limited()) {
+            http_response_code(429);
+            render_page('Installation pausiert', render_rate_limited());
+        }
         handle_install();
     }
 
@@ -53,6 +57,7 @@ function handle_install(): never
     }
 
     if ($errors !== []) {
+        record_install_attempt();
         $_SESSION['install_csrf'] = bin2hex(random_bytes(16));
         render_page('Installation', render_form($input, $errors));
     }
@@ -69,15 +74,18 @@ function handle_install(): never
         run_schema($pdo);
         ensure_private_dirs();
     } catch (Throwable $exception) {
+        record_install_attempt();
         $_SESSION['install_csrf'] = bin2hex(random_bytes(16));
         $errors[] = 'Installation fehlgeschlagen: ' . $exception->getMessage();
         render_page('Installation', render_form($input, $errors));
     }
 
     if (!write_config($configPhp)) {
+        clear_install_attempts();
         render_page('Config manuell speichern', render_manual_config($configPhp));
     }
 
+    clear_install_attempts();
     file_put_contents(PROJECT_ROOT . '/private/installed.lock', gmdate('Y-m-d H:i:s') . "\n", LOCK_EX);
     render_page('Installation abgeschlossen', render_success($apiToken, $backupToken));
 }
@@ -116,6 +124,8 @@ function build_config(array $input, string $apiToken, string $backupToken, strin
             'hsts_enabled' => false,
             'login_max_attempts' => 10,
             'login_window_seconds' => 600,
+            'install_max_attempts' => 10,
+            'install_window_seconds' => 600,
         ],
         'backup' => [
             'enabled' => $input['backup_enabled'],
@@ -258,6 +268,14 @@ function render_installed(): string
         . '</section>';
 }
 
+function render_rate_limited(): string
+{
+    return '<section class="installer">'
+        . '<h1>Installation pausiert</h1>'
+        . '<p>Es gab zu viele Installationsversuche. Bitte später erneut versuchen.</p>'
+        . '</section>';
+}
+
 function field(string $name, string $label, array $input, string $type = 'text'): string
 {
     $value = $type === 'password' ? '' : (string)($input[$name] ?? '');
@@ -311,6 +329,84 @@ function send_headers(): void
 function config_path(): string
 {
     return getenv('OPENPAW_MEMORY_CONFIG') ?: PROJECT_ROOT . '/private/config.php';
+}
+
+function install_rate_limited(): bool
+{
+    $state = install_rate_state();
+    $limit = max(1, (int)(install_security_config()['install_max_attempts'] ?? 10));
+    return (int)$state['count'] >= $limit;
+}
+
+function record_install_attempt(): void
+{
+    [$file, $state] = install_rate_file_and_state();
+    $state['count'] = (int)$state['count'] + 1;
+    file_put_contents($file, json_encode($state, JSON_THROW_ON_ERROR), LOCK_EX);
+}
+
+function clear_install_attempts(): void
+{
+    [$file] = install_rate_file_and_state();
+    if (is_file($file)) {
+        @unlink($file);
+    }
+}
+
+function install_rate_state(): array
+{
+    [, $state] = install_rate_file_and_state();
+    return $state;
+}
+
+function install_rate_file_and_state(): array
+{
+    $security = install_security_config();
+    $window = max(60, (int)($security['install_window_seconds'] ?? 600));
+    $dir = PROJECT_ROOT . '/private/runtime';
+    ensure_private_dirs();
+    cleanup_install_rate_files($dir, $window);
+
+    $key = hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . '|install');
+    $file = $dir . '/install-' . $key . '.json';
+    $now = time();
+    $state = ['start' => $now, 'count' => 0];
+    if (is_file($file)) {
+        $loaded = json_decode((string)file_get_contents($file), true);
+        if (is_array($loaded) && isset($loaded['start'], $loaded['count'])) {
+            $state = $loaded;
+        }
+    }
+    if ($now - (int)$state['start'] >= $window) {
+        $state = ['start' => $now, 'count' => 0];
+    }
+    return [$file, $state];
+}
+
+function cleanup_install_rate_files(string $dir, int $window): void
+{
+    if (random_int(1, 50) !== 1) {
+        return;
+    }
+    $maxAge = max($window * 2, 600);
+    $now = time();
+    foreach (glob($dir . '/install-*.json') ?: [] as $file) {
+        if (is_file($file) && $now - filemtime($file) > $maxAge) {
+            @unlink($file);
+        }
+    }
+}
+
+function install_security_config(): array
+{
+    $example = PROJECT_ROOT . '/private/config.example.php';
+    if (!is_file($example)) {
+        return [];
+    }
+    $config = require $example;
+    return is_array($config) && isset($config['security']) && is_array($config['security'])
+        ? $config['security']
+        : [];
 }
 
 function field_label(string $field): string

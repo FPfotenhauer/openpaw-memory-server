@@ -225,6 +225,8 @@ Checkliste vor öffentlicher Nutzung:
 - `private/` darf nicht öffentlich abrufbar sein.
 - Rate Limit aktiviert lassen.
 - Login-Throttling aktiviert lassen.
+- Installer nach Upload direkt ausführen und danach prüfen, dass `/install`
+  nur noch „Bereits installiert“ zeigt.
 - Dateiberechtigungen für Config und Backups restriktiv setzen.
 - Backup-Dateien regelmäßig extern sichern und alte Backups bewusst löschen.
 

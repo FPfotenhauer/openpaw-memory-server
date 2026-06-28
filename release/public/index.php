@@ -97,7 +97,7 @@ function send_site_headers(array $config): void
     header('Referrer-Policy: no-referrer');
     header('Cache-Control: no-store');
     if (($config['security']['csp_enabled'] ?? true) === true) {
-        header("Content-Security-Policy: default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'self'");
+        header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'self'");
     }
     if (($config['security']['hsts_enabled'] ?? false) === true && is_https()) {
         header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
@@ -164,37 +164,56 @@ function is_logged_in(): bool
 
 function render_home(bool $loggedIn): string
 {
-    $action = $loggedIn
-        ? '<a class="button" href="chat">Zum Chat</a>'
-        : '<a class="button" href="login">Login</a>';
+    $launchHref = $loggedIn ? 'chat' : 'login';
+    $launchLabel = $loggedIn ? 'launch chat' : 'launch';
 
     return <<<HTML
-<section class="hero">
-    <div class="hero-media" aria-hidden="true"></div>
-    <div class="hero-copy">
-        <p class="eyebrow">OpenPaw</p>
-        <h1>Persönlicher Memory- und Assistenzbereich</h1>
-        <p>Diese Startseite bleibt getrennt von der Memory-API. Das spätere Design kann hier eingehängt werden, ohne die API für OpenPaw zu verändern.</p>
-        {$action}
-    </div>
-</section>
-<section class="content-band">
-    <h2>Projektbereiche</h2>
-    <div class="tiles">
-        <article>
-            <h3>Memory API</h3>
-            <p>Im Hintergrund unter <code>/api</code> erreichbar und für OpenPaw/Paw sowie spätere Integrationen gedacht.</p>
-        </article>
-        <article>
-            <h3>Login</h3>
-            <p>Geschützter Zugang für persönliche Webbereiche wie den späteren Chat.</p>
-        </article>
-        <article>
-            <h3>Chat</h3>
-            <p>Vorbereitet als geschützte Seite. Die eigentliche OpenPaw-Anbindung wird später ergänzt.</p>
-        </article>
-    </div>
-</section>
+<main class="op-page op-landing">
+    <section class="op-window" aria-label="OpenPaw">
+        <header class="op-topbar">
+            <a class="op-brand" href=".">
+                <img class="mascot-icon" src="assets/openpaw-icon.svg" alt="" width="32" height="32">
+                <span>open<span>paw</span></span>
+            </a>
+            <div class="op-topnav">
+                <span class="op-status"><span></span>online</span>
+                <a href="#code">github ↗</a>
+                <button class="op-theme-toggle" type="button" aria-pressed="false">
+                    <span data-theme-label="dark">dark</span>
+                    <span data-theme-label="light">light</span>
+                </button>
+                <a class="op-launch" href="{$launchHref}">{$launchLabel}</a>
+            </div>
+        </header>
+
+        <div class="op-hero">
+            <div class="op-copy">
+                <p class="op-eyebrow">openpaw // personal AI companion</p>
+                <h1>A personal assistant with paws in everything.</h1>
+                <p>openpaw ships my code, runs my errands, and lives in my terminal. One companion, built for one user — me.</p>
+                <div class="op-actions">
+                    <a class="op-button op-button-primary" href="{$launchHref}">$ open paw</a>
+                    <a class="op-button" href="#docs">read the docs</a>
+                </div>
+            </div>
+
+            <aside class="op-terminal" id="code" aria-label="Terminal preview">
+                <div class="op-terminal-bar">
+                    <span>paw — zsh</span>
+                    <span aria-hidden="true">● ● ●</span>
+                </div>
+                <pre><code><span>$</span> paw remember "MariaDB is primary"
+<span>saved</span> memory.kind=architecture
+
+<span>$</span> paw search "backup token"
+<span>found</span> docs/security-checklist
+
+<span>$</span> paw chat
+<span>ready</span> signal bridge pending</code></pre>
+            </aside>
+        </div>
+    </section>
+</main>
 HTML;
 }
 
@@ -209,22 +228,26 @@ function render_login(): string
     }
 
     return <<<HTML
-<section class="auth-layout">
+<main class="op-page op-auth-page">
     <form class="auth-form" method="post" action="login">
-        <h1>Login</h1>
+        <a class="op-brand auth-brand" href=".">
+            <img class="mascot-icon" src="assets/openpaw-icon.svg" alt="" width="32" height="32">
+            <span>open<span>paw</span></span>
+        </a>
+        <h1>login</h1>
         {$error}
         <input name="csrf" type="hidden" value="{$csrf}">
         <label>
-            <span>Benutzer</span>
+            <span>user</span>
             <input name="username" type="text" autocomplete="username" required>
         </label>
         <label>
-            <span>Passwort</span>
+            <span>password</span>
             <input name="password" type="password" autocomplete="current-password" required>
         </label>
-        <button class="button" type="submit">Einloggen</button>
+        <button class="op-button op-button-primary" type="submit">launch chat</button>
     </form>
-</section>
+</main>
 HTML;
 }
 
@@ -232,24 +255,43 @@ function render_chat(): string
 {
     $csrf = escape(csrf_token());
     return <<<HTML
-<section class="app-shell">
-    <aside class="sidebar">
-        <h1>OpenPaw</h1>
+<main class="op-chat-page">
+    <section class="chat-shell" aria-label="OpenPaw Chat">
+        <aside class="chat-sidebar">
+            <a class="op-brand" href=".">
+                <img class="mascot-icon" src="assets/openpaw-icon.svg" alt="" width="32" height="32">
+                <span>open<span>paw</span></span>
+            </a>
+            <button class="chat-new" type="button">+ new chat</button>
+            <nav class="chat-list" aria-label="Chats">
+                <a class="active" href="chat">Today</a>
+                <a href="chat">Memory check</a>
+                <a href="chat">Deployment notes</a>
+            </nav>
+        </aside>
+        <section class="chat-main">
+            <header class="chat-head">
+                <div>
+                    <p class="op-eyebrow">openpaw // private chat</p>
+                    <h1>How can I help?</h1>
+                </div>
+                <span class="op-status"><span></span>online</span>
+            </header>
+            <div class="chat-empty">
+                <img class="mascot-animated" src="assets/openpaw-mascot.svg" alt="OpenPaw Maskottchen" width="96" height="96">
+                <p>Der geschützte Chatbereich ist vorbereitet. Die API bleibt unabhängig unter <code>/api</code> erreichbar.</p>
+            </div>
+            <form class="chat-compose" method="post" action="chat">
+                <input type="text" name="message" placeholder="Message openpaw..." disabled>
+                <button type="button" disabled>send</button>
+            </form>
+        </section>
         <form method="post" action="logout">
             <input name="csrf" type="hidden" value="{$csrf}">
-            <button class="text-button" type="submit">Logout</button>
+            <button class="chat-logout" type="submit">logout</button>
         </form>
-    </aside>
-    <main class="chat-panel">
-        <header>
-            <h2>Chat</h2>
-            <p>Dieser Bereich ist vorbereitet. Die eigentliche Chat-Anbindung wird später ergänzt.</p>
-        </header>
-        <div class="chat-placeholder">
-            <p>Noch keine Chat-Oberfläche aktiv.</p>
-        </div>
-    </main>
-</section>
+    </section>
+</main>
 HTML;
 }
 
@@ -264,15 +306,9 @@ function render_page(string $title, string $body): never
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{$safeTitle}</title>
     <link rel="stylesheet" href="assets/site.css">
+    <script src="assets/theme.js" defer></script>
 </head>
 <body>
-    <header class="site-header">
-        <a class="brand" href=".">OpenPaw</a>
-        <nav>
-            <a href=".">Start</a>
-            <a href="login">Login</a>
-        </nav>
-    </header>
     {$body}
 </body>
 </html>
