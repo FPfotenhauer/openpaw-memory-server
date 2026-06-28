@@ -372,6 +372,30 @@ p {
     font-size: 0.8rem;
 }
 
+.op-window-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.op-window-dots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+}
+
+.op-window-dots span:nth-child(1) {
+    background: #ff5f57;
+}
+
+.op-window-dots span:nth-child(2) {
+    background: #ffbd2e;
+}
+
+.op-window-dots span:nth-child(3) {
+    background: #28c840;
+}
+
 .op-terminal pre {
     margin: 0;
     padding: 20px;

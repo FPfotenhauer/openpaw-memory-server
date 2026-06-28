@@ -177,7 +177,7 @@ function render_home(bool $loggedIn): string
             </a>
             <div class="op-topnav">
                 <span class="op-status"><span></span>online</span>
-                <a href="#code">github ↗</a>
+                <a href="https://github.com/FPfotenhauer/openpaw-memory-server" rel="noopener noreferrer">github ↗</a>
                 <button class="op-theme-toggle" type="button" aria-pressed="false">
                     <span data-theme-label="dark">dark</span>
                     <span data-theme-label="light">light</span>
@@ -193,14 +193,14 @@ function render_home(bool $loggedIn): string
                 <p>openpaw ships my code, runs my errands, and lives in my terminal. One companion, built for one user — me.</p>
                 <div class="op-actions">
                     <a class="op-button op-button-primary" href="{$launchHref}">$ open paw</a>
-                    <a class="op-button" href="#docs">read the docs</a>
+                    <a class="op-button" href="https://fpfotenhauer.github.io/openpaw-memory-server/" rel="noopener noreferrer">read the docs</a>
                 </div>
             </div>
 
             <aside class="op-terminal" id="code" aria-label="Terminal preview">
                 <div class="op-terminal-bar">
                     <span>paw — zsh</span>
-                    <span aria-hidden="true">● ● ●</span>
+                    <span class="op-window-dots" aria-hidden="true"><span></span><span></span><span></span></span>
                 </div>
                 <pre><code><span>$</span> paw remember "MariaDB is primary"
 <span>saved</span> memory.kind=architecture
