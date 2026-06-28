@@ -3,4 +3,8 @@ openpaw-memory-server-2026-06-27/
 private/config.php
 private/backups/
 private/runtime/
+release/private/config.php
+release/private/backups/
+release/private/runtime/
+release/*.zip
 *.log
