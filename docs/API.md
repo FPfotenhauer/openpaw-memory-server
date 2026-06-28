@@ -83,7 +83,7 @@ Optionale Felder:
 - `source`: Quelle, z. B. `codex`, `openpaw`, `signal`, `manual`.
 - `source_ref`: optionale Referenz auf Ursprung, z. B. Message-ID oder Dateiname.
 - `confidence`: Zahl von `0.0` bis `1.0`.
-- `visibility`: aktuell frei benannter Sichtbarkeitswert, Default `private`.
+- `visibility`: Sichtbarkeitswert, standardmäßig `private` oder `internal`.
 - `observed_at`: Zeitpunkt der Beobachtung; Default ist der Erstellzeitpunkt.
 
 Standardmäßig erlaubte Werte:

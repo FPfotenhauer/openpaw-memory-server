@@ -545,7 +545,7 @@ function parse_allowed_string(array $config, string $field, mixed $value, int $m
 {
     $clean = clean_limited_string($value, $field, $maxLength);
     $allowed = allowed_memory_values($config, $field);
-    if ($allowed !== [] && !in_array($clean, $allowed, true)) {
+    if (!in_array($clean, $allowed, true)) {
         throw new InvalidArgumentException($field . ' must be one of: ' . implode(', ', $allowed));
     }
     return $clean;
@@ -559,9 +559,10 @@ function allowed_memory_values(array $config, string $field): array
         'visibility' => ['private', 'internal'],
         'source' => ['api', 'codex', 'openpaw', 'paw', 'signal', 'manual', 'smoke-test'],
     ];
-    $configured = $config['memory']['allowed_' . $field] ?? $defaults[$field] ?? [];
+    $default = $defaults[$field] ?? [];
+    $configured = $config['memory']['allowed_' . $field] ?? $default;
     if (!is_array($configured) || array_is_list($configured) === false) {
-        return $defaults[$field] ?? [];
+        return $default;
     }
     $values = [];
     foreach ($configured as $value) {
@@ -569,7 +570,8 @@ function allowed_memory_values(array $config, string $field): array
             $values[] = trim($value);
         }
     }
-    return array_values(array_unique($values));
+    $values = array_values(array_unique($values));
+    return $values === [] ? $default : $values;
 }
 
 function parse_optional_string(mixed $value, string $field, int $maxLength): ?string
