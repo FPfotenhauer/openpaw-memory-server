@@ -464,9 +464,9 @@ function row_to_memory(array $row): array
         'source_ref' => $row['source_ref'] === null ? null : (string)$row['source_ref'],
         'confidence' => (float)$row['confidence'],
         'visibility' => (string)$row['visibility'],
-        'observed_at' => gmdate('Y-m-d\TH:i:s\Z', strtotime((string)$row['observed_at'])),
-        'created_at' => gmdate('Y-m-d\TH:i:s\Z', strtotime((string)$row['created_at'])),
-        'updated_at' => gmdate('Y-m-d\TH:i:s\Z', strtotime((string)$row['updated_at'])),
+        'observed_at' => db_datetime_to_api((string)$row['observed_at']),
+        'created_at' => db_datetime_to_api((string)$row['created_at']),
+        'updated_at' => db_datetime_to_api((string)$row['updated_at']),
     ];
 }
 
@@ -859,16 +859,35 @@ function parse_datetime(mixed $value, string $field): string
     if (!is_string($value) || trim($value) === '') {
         throw new InvalidArgumentException($field . ' must be a datetime string');
     }
-    $timestamp = strtotime($value);
-    if ($timestamp === false) {
+    $clean = trim($value);
+    if (preg_match('/\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\z/', $clean) === 1) {
+        $clean = str_replace('T', ' ', $clean);
+        $datetime = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $clean, new DateTimeZone('UTC'));
+    } else {
+        try {
+            $datetime = new DateTimeImmutable($clean);
+        } catch (Exception) {
+            $datetime = false;
+        }
+    }
+    if ($datetime === false) {
         throw new InvalidArgumentException($field . ' must be a valid datetime string');
     }
-    return gmdate('Y-m-d H:i:s', $timestamp);
+    return $datetime->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
 }
 
 function db_datetime_from_api(string $value): string
 {
     return parse_datetime($value, 'observed_at');
+}
+
+function db_datetime_to_api(string $value): string
+{
+    $datetime = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
+    if ($datetime === false) {
+        $datetime = new DateTimeImmutable($value, new DateTimeZone('UTC'));
+    }
+    return $datetime->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
 }
 
 function validate_id(string $id): void
