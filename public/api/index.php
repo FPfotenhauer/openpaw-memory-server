@@ -69,6 +69,11 @@ function main(): void
             json_response(201, create_backup($pdo, $config));
         }
 
+        if ($method === 'POST' && $path === '/backups/restore') {
+            require_backup_access($config);
+            json_response(200, restore_backup($pdo, $config, read_json_body()));
+        }
+
         if ($method === 'GET' && $path === '/backups') {
             require_backup_access($config);
             json_response(200, ['backups' => list_backups($config)]);
@@ -504,6 +509,214 @@ function list_backups(array $config): array
     }
     usort($backups, static fn(array $a, array $b): int => strcmp($b['created_at'], $a['created_at']));
     return $backups;
+}
+
+function restore_backup(PDO $pdo, array $config, array $payload): array
+{
+    $file = clean_required_string($payload['file'] ?? null, 'file');
+    validate_backup_filename($file);
+    $mode = parse_restore_mode($payload['mode'] ?? 'upsert');
+    $dryRun = parse_restore_bool($payload['dry_run'] ?? false, 'dry_run');
+    $backup = load_backup_file($config, $file);
+    $memories = restore_memories_from_backup($backup);
+
+    $result = [
+        'restored' => !$dryRun,
+        'dry_run' => $dryRun,
+        'file' => $file,
+        'mode' => $mode,
+        'count' => count($memories),
+        'inserted' => 0,
+        'updated' => 0,
+        'skipped' => 0,
+    ];
+
+    $pdo->beginTransaction();
+    try {
+        foreach ($memories as $memory) {
+            $action = restore_memory($pdo, $memory, $mode, $dryRun);
+            $result[$action] = (int)$result[$action] + 1;
+        }
+        if ($dryRun) {
+            $pdo->rollBack();
+        } else {
+            $pdo->commit();
+        }
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+
+    return $result;
+}
+
+function validate_backup_filename(string $file): void
+{
+    if (preg_match('/\Aopenpaw-memory-\d{8}-\d{6}-[a-f0-9]{8}\.json\z/', $file) !== 1) {
+        throw new InvalidArgumentException('file must be a backup filename');
+    }
+}
+
+function parse_restore_mode(mixed $value): string
+{
+    if (!is_string($value)) {
+        throw new InvalidArgumentException('mode must be a string');
+    }
+    $mode = trim($value);
+    if (!in_array($mode, ['upsert', 'insert_only'], true)) {
+        throw new InvalidArgumentException('mode must be one of: upsert, insert_only');
+    }
+    return $mode;
+}
+
+function parse_restore_bool(mixed $value, string $field): bool
+{
+    if (!is_bool($value)) {
+        throw new InvalidArgumentException($field . ' must be a boolean');
+    }
+    return $value;
+}
+
+function load_backup_file(array $config, string $file): array
+{
+    $path = backup_dir($config) . '/' . $file;
+    if (!is_file($path)) {
+        error_response(404, 'backup not found');
+    }
+    $raw = file_get_contents($path);
+    if ($raw === false) {
+        throw new RuntimeException('backup could not be read');
+    }
+    $backup = json_decode($raw, true);
+    if (!is_array($backup) || array_is_list($backup)) {
+        throw new InvalidArgumentException('backup must be a JSON object');
+    }
+    if (($backup['format'] ?? '') !== 'openpaw-memory-backup-v1') {
+        throw new InvalidArgumentException('unsupported backup format');
+    }
+    if (!isset($backup['memories']) || !is_array($backup['memories']) || !array_is_list($backup['memories'])) {
+        throw new InvalidArgumentException('backup memories must be a list');
+    }
+    return $backup;
+}
+
+function restore_memories_from_backup(array $backup): array
+{
+    $memories = [];
+    foreach ($backup['memories'] as $index => $memory) {
+        if (!is_array($memory) || array_is_list($memory)) {
+            throw new InvalidArgumentException('backup memory at index ' . $index . ' must be an object');
+        }
+        $memories[] = normalize_restore_memory($memory, $index);
+    }
+    return $memories;
+}
+
+function normalize_restore_memory(array $memory, int $index): array
+{
+    $id = clean_required_string($memory['id'] ?? null, 'memories[' . $index . '].id');
+    validate_id($id);
+
+    $metadata = $memory['metadata'] ?? [];
+    if (!is_array($metadata)) {
+        throw new InvalidArgumentException('memories[' . $index . '].metadata must be an object');
+    }
+    if ($metadata !== [] && array_is_list($metadata)) {
+        throw new InvalidArgumentException('memories[' . $index . '].metadata must be an object');
+    }
+    json_encode($metadata, JSON_THROW_ON_ERROR);
+
+    return [
+        'id' => $id,
+        'text' => clean_required_string($memory['text'] ?? null, 'memories[' . $index . '].text'),
+        'tags' => parse_tags($memory['tags'] ?? []),
+        'metadata' => $metadata,
+        'kind' => clean_limited_string($memory['kind'] ?? 'note', 'memories[' . $index . '].kind', 64),
+        'importance' => parse_restore_unit_float($memory['importance'] ?? 0.5, 'memories[' . $index . '].importance'),
+        'scope' => clean_limited_string($memory['scope'] ?? 'personal', 'memories[' . $index . '].scope', 64),
+        'source' => clean_limited_string($memory['source'] ?? 'api', 'memories[' . $index . '].source', 128),
+        'source_ref' => parse_optional_string($memory['source_ref'] ?? null, 'memories[' . $index . '].source_ref', 255),
+        'confidence' => parse_restore_unit_float($memory['confidence'] ?? 1.0, 'memories[' . $index . '].confidence'),
+        'visibility' => clean_limited_string($memory['visibility'] ?? 'private', 'memories[' . $index . '].visibility', 32),
+        'observed_at' => parse_datetime($memory['observed_at'] ?? null, 'memories[' . $index . '].observed_at'),
+        'created_at' => parse_datetime($memory['created_at'] ?? null, 'memories[' . $index . '].created_at'),
+        'updated_at' => parse_datetime($memory['updated_at'] ?? null, 'memories[' . $index . '].updated_at'),
+    ];
+}
+
+function parse_restore_unit_float(mixed $value, string $field): float
+{
+    if (!is_int($value) && !is_float($value)) {
+        throw new InvalidArgumentException($field . ' must be a number');
+    }
+    $float = (float)$value;
+    if ($float < 0.0 || $float > 1.0) {
+        throw new InvalidArgumentException($field . ' must be between 0 and 1');
+    }
+    return $float;
+}
+
+function restore_memory(PDO $pdo, array $memory, string $mode, bool $dryRun): string
+{
+    $exists = memory_exists($pdo, $memory['id']);
+    if ($exists && $mode === 'insert_only') {
+        return 'skipped';
+    }
+    if (!$dryRun) {
+        upsert_restore_memory($pdo, $memory);
+    }
+    return $exists ? 'updated' : 'inserted';
+}
+
+function memory_exists(PDO $pdo, string $id): bool
+{
+    $statement = $pdo->prepare('SELECT 1 FROM memories WHERE id = :id');
+    $statement->execute(['id' => $id]);
+    return $statement->fetchColumn() !== false;
+}
+
+function upsert_restore_memory(PDO $pdo, array $memory): void
+{
+    $statement = $pdo->prepare(
+        'INSERT INTO memories
+            (id, text, tags_json, tags_text, metadata_json, kind, importance, scope, source, source_ref, confidence, visibility, observed_at, created_at, updated_at)
+         VALUES
+            (:id, :text, :tags_json, :tags_text, :metadata_json, :kind, :importance, :scope, :source, :source_ref, :confidence, :visibility, :observed_at, :created_at, :updated_at)
+         ON DUPLICATE KEY UPDATE
+            text = VALUES(text),
+            tags_json = VALUES(tags_json),
+            tags_text = VALUES(tags_text),
+            metadata_json = VALUES(metadata_json),
+            kind = VALUES(kind),
+            importance = VALUES(importance),
+            scope = VALUES(scope),
+            source = VALUES(source),
+            source_ref = VALUES(source_ref),
+            confidence = VALUES(confidence),
+            visibility = VALUES(visibility),
+            observed_at = VALUES(observed_at),
+            created_at = VALUES(created_at),
+            updated_at = VALUES(updated_at)'
+    );
+    $statement->execute([
+        'id' => $memory['id'],
+        'text' => $memory['text'],
+        'tags_json' => json_encode($memory['tags'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        'tags_text' => implode(' ', $memory['tags']),
+        'metadata_json' => json_encode($memory['metadata'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        'kind' => $memory['kind'],
+        'importance' => $memory['importance'],
+        'scope' => $memory['scope'],
+        'source' => $memory['source'],
+        'source_ref' => $memory['source_ref'],
+        'confidence' => $memory['confidence'],
+        'visibility' => $memory['visibility'],
+        'observed_at' => $memory['observed_at'],
+        'created_at' => $memory['created_at'],
+        'updated_at' => $memory['updated_at'],
+    ]);
 }
 
 function require_backup_access(array $config): void

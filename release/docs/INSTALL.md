@@ -274,6 +274,39 @@ curl -fsS \
   "${API_BASE_URL}/backups"
 ```
 
+Restore prüfen:
+
+```bash
+curl -fsS \
+  -X POST \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":true}' \
+  "${API_BASE_URL}/backups/restore"
+```
+
+Restore ausführen:
+
+```bash
+curl -fsS \
+  -X POST \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":false}' \
+  "${API_BASE_URL}/backups/restore"
+```
+
+Hinweise:
+
+- `file` muss ein Dateiname aus `GET /backups` sein.
+- `mode: "upsert"` aktualisiert vorhandene IDs und fügt fehlende ein.
+- `mode: "insert_only"` überspringt vorhandene IDs.
+- `dry_run: true` prüft den Restore ohne Schreibzugriff.
+- `id`, Inhalte, `observed_at`, `created_at` und `updated_at` werden aus dem
+  Backup übernommen.
+
 ## Spätere Datenbank-Updates
 
 Wenn es später neue SQL-Updates gibt, liegen sie als `.sql`-Dateien in

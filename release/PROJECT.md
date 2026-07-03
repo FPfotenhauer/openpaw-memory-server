@@ -157,6 +157,18 @@ curl -fsS \
   "${API_BASE_URL}/backups"
 ```
 
+Backup wiederherstellen:
+
+```bash
+curl -fsS \
+  -X POST \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":false}' \
+  "${API_BASE_URL}/backups/restore"
+```
+
 ## Datenmodell
 
 Pflichtfeld beim Anlegen ist `text`. Alle anderen Felder haben Defaults.
@@ -199,6 +211,14 @@ JSON-Datei in `private/backups/`. Sie ist standardmäßig ausgeschaltet. Wenn
 Backups aktiviert werden, ist ein separater `backup.token` Pflicht; der normale
 API-Bearer-Token reicht dafür nicht.
 
+Der Restore-Endpunkt `POST /backups/restore` spielt eine vorhandene Backup-Datei
+aus `private/backups/` zurück. Er benötigt zusätzlich zum normalen API-Token den
+separaten Backup-Token. Im Modus `upsert` werden vorhandene Erinnerungen anhand
+der `id` aktualisiert und fehlende Erinnerungen eingefügt. Im Modus
+`insert_only` werden vorhandene IDs übersprungen. Mit `dry_run: true` kann der
+Restore geprüft werden, ohne Daten zu schreiben. `id`, Inhalte, `observed_at`,
+`created_at` und `updated_at` werden aus dem Backup übernommen.
+
 Empfohlene Einstellungen:
 
 - `backup.enabled` erst nach erfolgreichem Grundtest aktivieren.
@@ -207,8 +227,8 @@ Empfohlene Einstellungen:
 - Backup-Verzeichnis außerhalb des Webroots halten.
 - Optional Cronjob einrichten, der `POST /backups` mit API-Token und
   Backup-Token aufruft.
-- Restore nicht automatisiert anbieten, solange kein geprüftes Verfahren
-  existiert. Import sollte manuell und kontrolliert erfolgen.
+- Vor einem Restore zuerst `POST /backups/restore` mit `dry_run: true` ausführen
+  und das Ergebnis prüfen.
 
 ## Sicherheit
 

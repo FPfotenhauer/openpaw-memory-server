@@ -185,6 +185,61 @@ curl -fsS \
 
 Die API schreibt eine JSON-Datei in das private Backup-Verzeichnis.
 
+## Restore
+
+Der Restore-Endpunkt spielt eine vorhandene Backup-Datei aus dem privaten
+Backup-Verzeichnis zurück. Er benötigt Bearer-Token und Backup-Token.
+
+Trockenlauf:
+
+```bash
+curl -fsS \
+  -X POST \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":true}' \
+  "${API_BASE_URL}/backups/restore"
+```
+
+Restore ausführen:
+
+```bash
+curl -fsS \
+  -X POST \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":false}' \
+  "${API_BASE_URL}/backups/restore"
+```
+
+Parameter:
+
+- `file`: Dateiname aus `GET /backups`.
+- `mode`: `upsert` oder `insert_only`; Default ist `upsert`.
+- `dry_run`: `true` oder `false`; Default ist `false`.
+
+`upsert` aktualisiert vorhandene Erinnerungen anhand der `id` und fügt fehlende
+ein. `insert_only` fügt nur fehlende Erinnerungen ein und überspringt vorhandene
+IDs. `id`, Inhalte, `observed_at`, `created_at` und `updated_at` werden aus dem
+Backup übernommen.
+
+Antwort:
+
+```json
+{
+  "restored": true,
+  "dry_run": false,
+  "file": "openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json",
+  "mode": "upsert",
+  "count": 10,
+  "inserted": 2,
+  "updated": 8,
+  "skipped": 0
+}
+```
+
 ## Backups auflisten
 
 ```bash
