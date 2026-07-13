@@ -1,4 +1,4 @@
-# OpenPaw Release-Paket 0.2.0
+# OpenPaw Release-Paket 0.3.0
 
 Dieses Verzeichnis enthält die Dateien, die später als Paket auf den Webspace
 kopiert werden können.
@@ -13,16 +13,18 @@ kopiert werden können.
 
 ## Kurzablauf
 
-1. `private/config.example.php` nach `private/config.php` kopieren.
-2. `private/config.php` mit Tokens, Login und Datenbankdaten ausfüllen.
-3. Datenbank einrichten:
+1. Webroot auf `public/` zeigen lassen.
+2. Website unter `/` öffnen.
+3. Beim ersten Aufruf den Web-Installer ausfüllen.
+4. Angezeigte Tokens sicher speichern.
+5. Login und API unter `/api/health` testen.
 
-   ```bash
-   php tools/init-db.php
-   ```
+Falls der Web-Installer nicht verwendet werden kann, kann die Datenbank auch
+per CLI eingerichtet werden:
 
-4. Webroot auf `public/` zeigen lassen.
-5. Website unter `/` und API unter `/api/health` testen.
+```bash
+php tools/init-db.php
+```
 
 Spätere SQL-Updates liegen als `.sql`-Dateien in `sql/migrations/` und
 werden mit diesem Befehl angewendet:
