@@ -40,6 +40,9 @@ werden:
 scripts/build-release.sh
 ```
 
+Das Skript erzeugt zusätzlich ein ZIP-Paket unter `dist/`. Dieses ZIP kann auf
+dem Webspace hochgeladen und dort entpackt werden.
+
 ## Voraussetzungen
 
 Vor dem Upload prüfen oder im Webspace-Kundenbereich nachsehen:
@@ -321,6 +324,12 @@ php release/tools/update-db.php
 ```
 
 Das Skript merkt sich angewendete Updates in der Tabelle `schema_migrations`.
+
+Für All-Inkl-Webspace mit oder ohne SSH steht ein genauer Ablauf in
+`docs/ALLINKL.md`.
+
+Wenn die Website bereits läuft, kann die Datenbank nach dem Upload auch über
+die geschützte Browser-Routine `/update` aktualisiert werden.
 
 ## Sicherheit prüfen
 

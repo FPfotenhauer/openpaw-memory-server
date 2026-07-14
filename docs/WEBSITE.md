@@ -9,6 +9,7 @@ vorbereitet.
 - `/install`: einmaliger Web-Installer, nur solange keine Config existiert.
 - `/login`: Login für den privaten Webbereich.
 - `/chat`: geschützter Chatbereich mit Threadliste und Nachrichtenverlauf.
+- `/update`: geschützte Browser-Routine für Datenbankmigrationen.
 - `/api/health`: API-Health-Check.
 - `/api/memories`: Memory-API.
 - `/api/backups`: Backup-API, nur wenn aktiviert.

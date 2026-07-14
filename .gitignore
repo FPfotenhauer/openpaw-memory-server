@@ -10,5 +10,6 @@ release/private/installed.lock
 release/private/backups/
 release/private/runtime/
 release/*.zip
+dist/
 openpaw-ref-*.png
 *.log

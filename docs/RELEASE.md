@@ -18,7 +18,8 @@ scripts/build-release.sh
 ```
 
 Das Skript erstellt den Ordner `release/` neu und kopiert alle Dateien hinein,
-die für den Webspace benötigt werden.
+die für den Webspace benötigt werden. Zusätzlich erzeugt es ein ZIP-Paket unter
+`dist/`.
 
 ## Version erhöhen
 
@@ -39,7 +40,7 @@ Empfohlene einfache Regeln:
 1. Änderungen im Projekt machen.
 2. `VERSION` bei Bedarf erhöhen.
 3. `scripts/build-release.sh` ausführen.
-4. `release/` prüfen.
+4. `release/` und `dist/openpaw-memory-server-<version>.zip` prüfen.
 5. Erst danach Paket hochladen oder committen.
 
 Das Skript löscht und erstellt `release/` neu. Echte Dateien wie

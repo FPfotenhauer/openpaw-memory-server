@@ -814,6 +814,40 @@ p {
     padding: 10px 14px 10px 28px;
 }
 
+.update-result {
+    grid-column: 1 / -1;
+    border: 1px solid rgba(85, 211, 111, 0.45);
+    border-radius: 10px;
+    background: rgba(85, 211, 111, 0.08);
+    color: var(--green);
+}
+
+.update-result ul {
+    margin: 0;
+    padding: 10px 14px 10px 28px;
+}
+
+.update-table {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: 12px;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.update-table th,
+.update-table td {
+    border-bottom: 1px solid var(--line-soft);
+    padding: 9px 8px;
+    text-align: left;
+}
+
+.update-table th {
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+}
+
 @media (max-width: 900px) {
     .op-page {
         padding: 18px;

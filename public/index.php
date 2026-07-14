@@ -27,6 +27,10 @@ function main(): void
         require_login();
         handle_chat($config);
     }
+    if ($method === 'POST' && $path === '/update') {
+        require_login();
+        handle_update($config);
+    }
 
     send_site_headers($config);
 
@@ -39,6 +43,10 @@ function main(): void
     if ($path === '/chat') {
         require_login();
         render_page('Chat', render_chat($config));
+    }
+    if ($path === '/update') {
+        require_login();
+        render_page('Update', render_update($config));
     }
 
     http_response_code(404);
@@ -197,6 +205,27 @@ function handle_chat(array $config): never
         chat_flash('Fehler: ' . $exception->getMessage());
         redirect('/chat');
     }
+}
+
+function handle_update(array $config): never
+{
+    if (!csrf_valid((string)($_POST['csrf'] ?? ''))) {
+        $_SESSION['openpaw_update_result'] = ['error' => 'Das Formular ist abgelaufen. Bitte erneut versuchen.'];
+        redirect('/update');
+    }
+
+    try {
+        $pdo = connect_site_db($config);
+        $result = run_site_migrations($pdo, PROJECT_ROOT . '/sql/migrations');
+        $_SESSION['openpaw_update_result'] = [
+            'applied' => $result['applied'],
+            'skipped' => $result['skipped'],
+        ];
+    } catch (Throwable $exception) {
+        $_SESSION['openpaw_update_result'] = ['error' => $exception->getMessage()];
+    }
+
+    redirect('/update');
 }
 
 function require_login(): void
@@ -399,6 +428,47 @@ HTML;
 HTML;
 }
 
+function render_update(array $config): string
+{
+    $csrf = escape(csrf_token());
+    $result = render_update_result();
+
+    try {
+        $pdo = connect_site_db($config);
+        ensure_site_migration_table($pdo);
+        $migrations = site_migration_files(PROJECT_ROOT . '/sql/migrations');
+        $rows = render_update_rows($pdo, $migrations);
+        $pending = count_pending_migrations($pdo, $migrations);
+        $button = $pending > 0
+            ? '<button type="submit">Datenbank-Update ausführen</button>'
+            : '<button type="submit" disabled>Keine Updates offen</button>';
+        $summary = $pending > 0
+            ? $pending . ' Migration(en) offen.'
+            : 'Die Datenbank ist aktuell.';
+    } catch (Throwable $exception) {
+        $message = escape($exception->getMessage());
+        return '<section class="installer">'
+            . '<h1>Update</h1>'
+            . '<div class="errors"><ul><li>' . $message . '</li></ul></div>'
+            . '<p><a href="chat">Zurück zum Chat</a></p>'
+            . '</section>';
+    }
+
+    return '<section class="installer">'
+        . '<h1>Update</h1>'
+        . '<p>' . escape($summary) . '</p>'
+        . $result
+        . '<form method="post" action="update">'
+        . '<input name="csrf" type="hidden" value="' . $csrf . '">'
+        . '<table class="update-table"><thead><tr><th>Migration</th><th>Status</th></tr></thead><tbody>'
+        . $rows
+        . '</tbody></table>'
+        . $button
+        . '</form>'
+        . '<p><a href="chat">Zurück zum Chat</a></p>'
+        . '</section>';
+}
+
 function connect_site_db(array $config): PDO
 {
     $db = $config['db'] ?? [];
@@ -414,6 +484,121 @@ function connect_site_db(array $config): PDO
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
+}
+
+function ensure_site_migration_table(PDO $pdo): void
+{
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS schema_migrations (
+            name VARCHAR(255) NOT NULL,
+            applied_at DATETIME NOT NULL,
+            PRIMARY KEY (name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+}
+
+function site_migration_files(string $dir): array
+{
+    if (!is_dir($dir)) {
+        return [];
+    }
+    $files = glob($dir . '/*.sql') ?: [];
+    sort($files);
+    return $files;
+}
+
+function site_migration_applied(PDO $pdo, string $name): bool
+{
+    $statement = $pdo->prepare('SELECT 1 FROM schema_migrations WHERE name = :name');
+    $statement->execute(['name' => $name]);
+    return $statement->fetchColumn() !== false;
+}
+
+function run_site_migrations(PDO $pdo, string $dir): array
+{
+    ensure_site_migration_table($pdo);
+    $result = ['applied' => [], 'skipped' => []];
+
+    foreach (site_migration_files($dir) as $file) {
+        $name = basename($file);
+        if (site_migration_applied($pdo, $name)) {
+            $result['skipped'][] = $name;
+            continue;
+        }
+
+        foreach (split_site_sql((string)file_get_contents($file)) as $statement) {
+            $pdo->exec($statement);
+        }
+        $insert = $pdo->prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (:name, UTC_TIMESTAMP())');
+        $insert->execute(['name' => $name]);
+        $result['applied'][] = $name;
+    }
+
+    return $result;
+}
+
+function split_site_sql(string $sql): array
+{
+    $parts = array_map('trim', explode(';', $sql));
+    return array_values(array_filter($parts, static fn(string $part): bool => $part !== ''));
+}
+
+function count_pending_migrations(PDO $pdo, array $files): int
+{
+    $pending = 0;
+    foreach ($files as $file) {
+        if (!site_migration_applied($pdo, basename($file))) {
+            $pending++;
+        }
+    }
+    return $pending;
+}
+
+function render_update_rows(PDO $pdo, array $files): string
+{
+    if ($files === []) {
+        return '<tr><td colspan="2">Keine Migrationsdateien gefunden.</td></tr>';
+    }
+
+    $html = '';
+    foreach ($files as $file) {
+        $name = basename($file);
+        $status = site_migration_applied($pdo, $name) ? 'angewendet' : 'offen';
+        $html .= '<tr><td><code>' . escape($name) . '</code></td><td>' . escape($status) . '</td></tr>';
+    }
+    return $html;
+}
+
+function render_update_result(): string
+{
+    if (!isset($_SESSION['openpaw_update_result']) || !is_array($_SESSION['openpaw_update_result'])) {
+        return '';
+    }
+    $result = $_SESSION['openpaw_update_result'];
+    unset($_SESSION['openpaw_update_result']);
+
+    if (isset($result['error'])) {
+        return '<div class="errors"><ul><li>' . escape((string)$result['error']) . '</li></ul></div>';
+    }
+
+    $applied = $result['applied'] ?? [];
+    $skipped = $result['skipped'] ?? [];
+    $lines = [];
+    $lines[] = count($applied) . ' Migration(en) angewendet.';
+    if (is_array($applied)) {
+        foreach ($applied as $name) {
+            $lines[] = 'Angewendet: ' . $name;
+        }
+    }
+    if (is_array($skipped) && $skipped !== []) {
+        $lines[] = count($skipped) . ' bereits angewendet.';
+    }
+
+    $items = '';
+    foreach ($lines as $line) {
+        $items .= '<li>' . escape($line) . '</li>';
+    }
+    return '<div class="update-result"><ul>' . $items . '</ul></div>';
 }
 
 function site_list_chat_threads(PDO $pdo, int $limit): array

@@ -55,7 +55,8 @@ installierbaren Dateien mit `public/`, `private/`, `sql/`, `tools/` und `docs/`.
 Die ausführliche Anleitung steht in `docs/INSTALL.md`.
 
 1. Release-Paket mit `scripts/build-release.sh` erzeugen.
-2. Dateien aus `release/` hochladen.
+2. ZIP aus `dist/` hochladen und auf dem Webspace entpacken oder Dateien aus
+   `release/` hochladen.
 3. Webserver so konfigurieren, dass `public/` der Webroot ist.
 4. Startseite öffnen und den Web-Installer ausfüllen.
 5. Falls Webroot-Trennung nicht möglich ist, `private/` zusätzlich per `.htaccess` sperren

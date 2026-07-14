@@ -9,6 +9,8 @@ OpenPaw-Memory-Servers mit Website, Login-Bereich und unabhängiger Memory-API.
   Backup-Konzept und Deployment-Schritte.
 - [Installation](INSTALL.md): Schrittweise Installation aus dem `release/`
   Paket auf einem PHP-Webspace.
+- [All-Inkl Deployment](ALLINKL.md): Erstinstallation und Updates auf einem
+  All-Inkl-Webspace.
 - [Releases](RELEASE.md): Version erhöhen und das `release/` Paket neu bauen.
 - [Website-Struktur](WEBSITE.md): Startseite, Login, geschützter Chatbereich
   und Trennung von Website und API.
