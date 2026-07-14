@@ -43,6 +43,10 @@ Die erste Ausbaustufe bietet:
 - Hauptbereich mit Nachrichtenverlauf
 - Eingabeformular für neue Nachrichten
 - Rollenkennzeichnung für `frank`, `paw`, `system` und `external`
+- Speichern einzelner Nachrichten als globale Memories mit Thread-Bezug
+- Anzeige der zuletzt gespeicherten Memories im ausgewählten Thread
+- Thread-Suche über Titel und Nachrichten
+- Umbenennen, Archivieren, Wiederherstellen und Löschen von Threads
 
 ## Design
 

@@ -72,6 +72,11 @@ function main(): void
             json_response(201, create_chat_thread($pdo, read_json_body()));
         }
 
+        if ($method === 'GET' && $path === '/chats/search') {
+            $query = trim((string)($_GET['q'] ?? ''));
+            json_response(200, ['query' => $query, 'chats' => search_chat_threads($pdo, $query)]);
+        }
+
         if (preg_match('#^/chats/([A-Za-z0-9._:-]+)$#', $path, $matches) === 1) {
             $id = $matches[1];
             if ($method === 'GET') {
@@ -106,6 +111,13 @@ function main(): void
             }
             if ($method === 'POST') {
                 json_response(201, create_chat_message($pdo, $threadId, read_json_body()));
+            }
+        }
+
+        if (preg_match('#^/chats/([A-Za-z0-9._:-]+)/messages/([A-Za-z0-9._:-]+)/memory$#', $path, $matches) === 1) {
+            if ($method === 'POST') {
+                $result = create_memory_from_chat_message($pdo, $config, $matches[1], $matches[2], read_json_body());
+                json_response(($result['created'] ?? false) === true ? 201 : 200, $result);
             }
         }
 
@@ -532,6 +544,49 @@ function list_chat_threads(PDO $pdo): array
     return array_map('row_to_chat_thread', $statement->fetchAll());
 }
 
+function search_chat_threads(PDO $pdo, string $query): array
+{
+    $limit = clamp_int($_GET['limit'] ?? 20, 1, 100);
+    $terms = search_terms($query);
+    if ($terms === []) {
+        return [];
+    }
+
+    $where = [];
+    $params = [];
+    foreach ($terms as $index => $term) {
+        $title = 'term' . $index . '_title';
+        $channel = 'term' . $index . '_channel';
+        $owner = 'term' . $index . '_owner';
+        $message = 'term' . $index . '_message';
+        $source = 'term' . $index . '_source';
+        $role = 'term' . $index . '_role';
+        $where[] = '(t.title LIKE :' . $title . ' OR t.channel LIKE :' . $channel . ' OR t.owner_context LIKE :' . $owner . ' OR EXISTS (
+            SELECT 1 FROM chat_messages m
+            WHERE m.thread_id = t.id AND (m.text LIKE :' . $message . ' OR m.source LIKE :' . $source . ' OR m.role LIKE :' . $role . ')
+        ))';
+        $value = '%' . escape_like_term($term) . '%';
+        foreach ([$title, $channel, $owner, $message, $source, $role] as $name) {
+            $params[$name] = $value;
+        }
+    }
+
+    $statement = $pdo->prepare(
+        'SELECT t.*,
+                (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id = t.id) AS message_count
+         FROM chat_threads t
+         WHERE ' . implode(' OR ', $where) . '
+         ORDER BY t.updated_at DESC
+         LIMIT :limit'
+    );
+    foreach ($params as $name => $value) {
+        $statement->bindValue($name, $value, PDO::PARAM_STR);
+    }
+    $statement->bindValue('limit', $limit, PDO::PARAM_INT);
+    $statement->execute();
+    return array_map('row_to_chat_thread', $statement->fetchAll());
+}
+
 function create_chat_thread(PDO $pdo, array $payload): array
 {
     $id = isset($payload['id']) ? clean_required_string($payload['id'], 'id') : bin2hex(random_bytes(16));
@@ -713,6 +768,76 @@ function get_chat_message_or_fail(PDO $pdo, string $id): array
         throw new RuntimeException('chat message disappeared after write');
     }
     return row_to_chat_message($row);
+}
+
+function get_chat_message(PDO $pdo, string $threadId, string $messageId): ?array
+{
+    $statement = $pdo->prepare('SELECT * FROM chat_messages WHERE id = :id AND thread_id = :thread_id');
+    $statement->execute(['id' => $messageId, 'thread_id' => $threadId]);
+    $row = $statement->fetch();
+    return $row === false ? null : row_to_chat_message($row);
+}
+
+function create_memory_from_chat_message(PDO $pdo, array $config, string $threadId, string $messageId, array $payload): array
+{
+    $message = get_chat_message($pdo, $threadId, $messageId);
+    if ($message === null) {
+        error_response(404, 'chat message not found');
+    }
+    if ($message['memory_id'] !== null) {
+        $memory = get_memory($pdo, (string)$message['memory_id']);
+        if ($memory !== null) {
+            return ['memory' => $memory, 'message' => $message, 'created' => false];
+        }
+    }
+
+    $thread = get_chat_thread($pdo, $threadId);
+    if ($thread === null) {
+        error_response(404, 'chat thread not found');
+    }
+
+    $memoryPayload = [
+        'text' => array_key_exists('text', $payload) ? $payload['text'] : $message['text'],
+        'tags' => array_key_exists('tags', $payload) ? $payload['tags'] : ['chat', (string)$message['role']],
+        'metadata' => array_key_exists('metadata', $payload) ? $payload['metadata'] : [],
+        'kind' => $payload['kind'] ?? 'note',
+        'importance' => $payload['importance'] ?? 0.5,
+        'scope' => $payload['scope'] ?? 'personal',
+        'source' => $payload['source'] ?? 'openpaw',
+        'source_ref' => $payload['source_ref'] ?? ('chat:' . $threadId . ':' . $messageId),
+        'confidence' => $payload['confidence'] ?? 1.0,
+        'visibility' => $payload['visibility'] ?? 'private',
+        'observed_at' => $payload['observed_at'] ?? $message['observed_at'],
+    ];
+    $metadata = parse_metadata($memoryPayload['metadata']);
+    $metadata['origin'] = 'chat';
+    $metadata['chat_thread_id'] = $threadId;
+    $metadata['chat_thread_title'] = $thread['title'];
+    $metadata['chat_message_id'] = $messageId;
+    $metadata['chat_role'] = $message['role'];
+    $metadata['chat_source'] = $message['source'];
+    $memoryPayload['metadata'] = $metadata;
+
+    $pdo->beginTransaction();
+    try {
+        $memory = create_memory($pdo, $config, $memoryPayload);
+        link_chat_message_memory($pdo, $messageId, $memory['id']);
+        $updatedMessage = get_chat_message($pdo, $threadId, $messageId);
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+
+    return ['memory' => $memory, 'message' => $updatedMessage ?? $message, 'created' => true];
+}
+
+function link_chat_message_memory(PDO $pdo, string $messageId, string $memoryId): void
+{
+    $statement = $pdo->prepare('UPDATE chat_messages SET memory_id = :memory_id WHERE id = :id');
+    $statement->execute(['id' => $messageId, 'memory_id' => $memoryId]);
 }
 
 function touch_chat_thread(PDO $pdo, string $threadId): void

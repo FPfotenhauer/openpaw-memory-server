@@ -46,13 +46,46 @@ echo
 
 chat_id="$(php -r '$j=json_decode(stream_get_contents(STDIN), true); echo $j["id"];' <<<"${chat}")"
 
-curl -fsS "${AUTH[@]}" \
-  -H 'Content-Type: application/json' \
-  -d '{"role":"system","text":"OpenPaw smoke test chat message","source":"smoke-test","metadata":{"test":true}}' \
-  "${API_BASE_URL}/chats/${chat_id}/messages"
+chat_message="$(
+  curl -fsS "${AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    -d '{"role":"system","text":"OpenPaw smoke test chat message","source":"smoke-test","metadata":{"test":true}}' \
+    "${API_BASE_URL}/chats/${chat_id}/messages"
+)"
+echo "${chat_message}"
 echo
 
+chat_message_id="$(php -r '$j=json_decode(stream_get_contents(STDIN), true); echo $j["id"];' <<<"${chat_message}")"
+
 curl -fsS "${AUTH[@]}" "${API_BASE_URL}/chats/${chat_id}/messages"
+echo
+
+chat_memory="$(
+  curl -fsS -X POST "${AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    "${API_BASE_URL}/chats/${chat_id}/messages/${chat_message_id}/memory"
+)"
+echo "${chat_memory}"
+echo
+
+chat_memory_id="$(php -r '$j=json_decode(stream_get_contents(STDIN), true); echo $j["memory"]["id"];' <<<"${chat_memory}")"
+
+curl -fsS -X DELETE "${AUTH[@]}" "${API_BASE_URL}/memories/${chat_memory_id}"
+echo
+
+curl -fsS "${AUTH[@]}" "${API_BASE_URL}/chats/search?q=smoke%20test"
+echo
+
+curl -fsS -X PATCH "${AUTH[@]}" \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"archived"}' \
+  "${API_BASE_URL}/chats/${chat_id}"
+echo
+
+curl -fsS -X PATCH "${AUTH[@]}" \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"open"}' \
+  "${API_BASE_URL}/chats/${chat_id}"
 echo
 
 curl -fsS -X DELETE "${AUTH[@]}" "${API_BASE_URL}/chats/${chat_id}"

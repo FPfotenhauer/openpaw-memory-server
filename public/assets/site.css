@@ -219,6 +219,8 @@ p {
 
 :root[data-theme="light"] .auth-form input,
 :root[data-theme="light"] .chat-new-form input,
+:root[data-theme="light"] .chat-search-form input,
+:root[data-theme="light"] .chat-thread-tools input[type="text"],
 :root[data-theme="light"] .chat-compose,
 :root[data-theme="light"] .chat-compose select,
 :root[data-theme="light"] .installer input:not([type="checkbox"]),
@@ -628,6 +630,72 @@ p {
     color: var(--muted);
 }
 
+.chat-thread-memories {
+    display: grid;
+    gap: 8px;
+    border-top: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--line-soft);
+    padding: 12px 0;
+}
+
+.chat-thread-memories > span {
+    color: var(--faint);
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.chat-thread-memories ul {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.chat-thread-memories li {
+    display: grid;
+    gap: 4px;
+}
+
+.chat-thread-memories p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.chat-message-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.chat-message-actions form {
+    margin: 0;
+}
+
+.chat-message-actions button {
+    min-height: 28px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0 10px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.chat-memory-saved {
+    color: var(--green);
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.66rem;
+    font-weight: 800;
+}
+
 @keyframes mascot-icon-bob {
     0%,
     100% {
@@ -660,7 +728,29 @@ p {
     gap: 8px;
 }
 
+.chat-search-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+
+.chat-search-form button,
+.chat-thread-tools button {
+    min-height: 34px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0 12px;
+    background: var(--panel-strong);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
 .chat-new-form input,
+.chat-search-form input,
+.chat-thread-tools input[type="text"],
 .chat-compose select,
 .chat-compose input {
     min-width: 0;
@@ -673,6 +763,8 @@ p {
 }
 
 .chat-new-form input,
+.chat-search-form input,
+.chat-thread-tools input[type="text"],
 .chat-compose select {
     border: 1px solid var(--line-soft);
     border-radius: 10px;
@@ -688,6 +780,38 @@ p {
 .chat-compose select:disabled {
     cursor: not-allowed;
     opacity: 0.72;
+}
+
+.chat-thread-tools {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto auto;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.chat-thread-tools form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.chat-thread-tools form:first-child input[type="text"] {
+    flex: 1 1 auto;
+}
+
+.chat-thread-tools label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 0.74rem;
+    white-space: nowrap;
+}
+
+.chat-thread-tools .danger {
+    border-color: rgba(255, 124, 124, 0.45);
+    color: var(--danger);
 }
 
 .chat-logout {
@@ -916,6 +1040,14 @@ p {
 
     .chat-compose {
         grid-template-columns: 1fr;
+    }
+
+    .chat-thread-tools {
+        grid-template-columns: 1fr;
+    }
+
+    .chat-thread-tools form {
+        flex-wrap: wrap;
     }
 
     .chat-logout {

@@ -191,6 +191,16 @@ curl -fsS \
   "${API_BASE_URL}/chats?limit=20&offset=0"
 ```
 
+Threads suchen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/search?q=Signal&limit=20"
+```
+
+Die Suche prüft Thread-Titel, Kanal, Kontext und Nachrichteninhalte.
+
 Thread lesen oder aktualisieren:
 
 ```bash
@@ -202,7 +212,7 @@ curl -fsS \
   -X PATCH \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"title":"Paw / Frank notes","status":"open"}' \
+  -d '{"title":"Paw / Frank notes","status":"archived"}' \
   "${API_BASE_URL}/chats/<id>"
 ```
 
@@ -234,6 +244,21 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   "${API_BASE_URL}/chats/<id>/messages?limit=50&offset=0"
 ```
+
+Nachricht als Memory speichern:
+
+```bash
+curl -fsS \
+  -X POST \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  "${API_BASE_URL}/chats/<id>/messages/<message-id>/memory"
+```
+
+Die API legt ein globales Memory an, setzt `chat_messages.memory_id` und
+speichert im Memory-Metadata den Ursprung mit `chat_thread_id` und
+`chat_message_id`. Wenn die Nachricht bereits verknüpft ist, wird das vorhandene
+Memory zurückgegeben.
 
 Wichtige Felder:
 

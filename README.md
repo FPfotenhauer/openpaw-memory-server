@@ -19,9 +19,11 @@ dieselbe API nutzen.
 Die Website stellt Startseite, Login und einen geschützten Chatbereich bereit.
 Der Chat speichert Threads und Nachrichten serverseitig, ohne den API-Token an
 den Browser auszugeben. Chatnachrichten und Memory-Einträge bleiben getrennt,
-können aber über Referenzen verbunden werden. Die API speichert Erinnerungen mit
-Text, Tags, Metadaten, Art, Wichtigkeit, Scope, Quelle, Confidence, Visibility
-und Zeitstempeln. Die Suche verwendet MariaDB-Fulltext; falls der
+können aber über Referenzen verbunden werden. Einzelne Chatnachrichten können
+als globale Memories gespeichert werden; der Thread-Bezug bleibt über
+`chat_messages.memory_id` und Memory-Metadaten erhalten. Die API speichert
+Erinnerungen mit Text, Tags, Metadaten, Art, Wichtigkeit, Scope, Quelle,
+Confidence, Visibility und Zeitstempeln. Die Suche verwendet MariaDB-Fulltext; falls der
 Fulltext-Index nicht nutzbar ist, fällt die API auf einfache `LIKE`-Suche
 zurück.
 
@@ -218,7 +220,10 @@ Die Chatfunktion nutzt eigene Tabellen:
 
 Rohverläufe bleiben Chatdaten. Dauerhaft wichtige Erkenntnisse gehören als
 kuratierte Einträge in `memories` und können von Chatnachrichten referenziert
-werden.
+werden. Memories bleiben bewusst global, damit sie in der normalen
+Memory-Suche gefunden werden. Der Bezug zum Chat-Thread wird über
+`chat_messages.memory_id` sowie die Metadaten `origin`, `chat_thread_id` und
+`chat_message_id` gespeichert.
 
 ## Backup-Konzept
 

@@ -190,6 +190,36 @@ function handle_chat(array $config): never
             redirect('/chat?thread=' . rawurlencode($threadId));
         }
 
+        if ($action === 'archive_thread' || $action === 'restore_thread') {
+            $threadId = clean_site_id((string)($_POST['thread_id'] ?? ''));
+            $status = $action === 'archive_thread' ? 'archived' : 'open';
+            if (!site_set_chat_thread_status($pdo, $threadId, $status)) {
+                chat_flash('Thread nicht gefunden.');
+                redirect('/chat');
+            }
+            redirect('/chat?thread=' . rawurlencode($threadId));
+        }
+
+        if ($action === 'delete_thread') {
+            $threadId = clean_site_id((string)($_POST['thread_id'] ?? ''));
+            if (!isset($_POST['confirm_delete'])) {
+                chat_flash('Zum Löschen bitte die Checkbox bestätigen.');
+                redirect('/chat?thread=' . rawurlencode($threadId));
+            }
+            if (!site_delete_chat_thread($pdo, $threadId)) {
+                chat_flash('Thread nicht gefunden.');
+            }
+            redirect('/chat');
+        }
+
+        if ($action === 'save_message_memory') {
+            $threadId = clean_site_id((string)($_POST['thread_id'] ?? ''));
+            $messageId = clean_site_id((string)($_POST['message_id'] ?? ''));
+            $memory = site_create_memory_from_chat_message($pdo, $config, $threadId, $messageId);
+            chat_flash('Memory gespeichert: ' . $memory['id']);
+            redirect('/chat?thread=' . rawurlencode($threadId));
+        }
+
         $threadId = trim((string)($_POST['thread_id'] ?? ''));
         if ($threadId === '') {
             $thread = site_create_chat_thread($pdo, 'Web chat');
@@ -367,7 +397,8 @@ function render_chat(array $config): string
 
     try {
         $pdo = connect_site_db($config);
-        $threads = site_list_chat_threads($pdo, 50);
+        $query = trim((string)($_GET['q'] ?? ''));
+        $threads = $query === '' ? site_list_chat_threads($pdo, 50) : site_search_chat_threads($pdo, $query, 50);
         $selectedId = isset($_GET['thread']) ? clean_site_id((string)$_GET['thread']) : ($threads[0]['id'] ?? null);
         $selected = $selectedId === null ? null : site_get_chat_thread($pdo, $selectedId);
         if ($selected === null && $threads !== []) {
@@ -375,6 +406,7 @@ function render_chat(array $config): string
             $selectedId = $selected['id'];
         }
         $messages = $selectedId === null ? [] : site_list_chat_messages($pdo, $selectedId, 200);
+        $threadMemories = $selectedId === null ? [] : site_list_chat_thread_memories($pdo, $selectedId, 10);
     } catch (Throwable $exception) {
         $message = escape($exception->getMessage());
         return <<<HTML
@@ -401,13 +433,16 @@ HTML;
     }
 
     $threadList = render_chat_thread_list($threads, $selectedId);
-    $messageList = render_chat_message_list($messages);
+    $messageList = render_chat_message_list($csrf, $messages);
+    $searchQuery = escape($query ?? '');
     $selectedTitle = escape((string)($selected['title'] ?? 'No chat selected'));
     $selectedMeta = $selected === null
         ? 'create a thread to start'
         : escape($selected['channel'] . ' / ' . $selected['status'] . ' / ' . ($selected['message_count'] ?? 0) . ' messages');
     $threadIdInput = $selectedId === null ? '' : '<input name="thread_id" type="hidden" value="' . escape($selectedId) . '">';
     $disabled = $selectedId === null ? ' disabled' : '';
+    $threadTools = $selected === null ? '' : render_chat_thread_tools($csrf, $selected);
+    $threadMemoryList = $selected === null ? '' : render_chat_thread_memories($threadMemories);
 
     return <<<HTML
 <main class="op-chat-page">
@@ -423,6 +458,10 @@ HTML;
                 <input name="title" type="text" placeholder="Thread title" maxlength="255">
                 <button class="chat-new" type="submit">+ new chat</button>
             </form>
+            <form class="chat-search-form" method="get" action="chat">
+                <input name="q" type="search" placeholder="Search chats" value="{$searchQuery}" maxlength="120">
+                <button type="submit">search</button>
+            </form>
             <nav class="chat-list" aria-label="Chats">{$threadList}</nav>
         </aside>
         <section class="chat-main">
@@ -435,6 +474,8 @@ HTML;
                 <span class="op-status"><span></span>online</span>
             </header>
             {$flash}
+            {$threadTools}
+            {$threadMemoryList}
             <div class="chat-log" aria-live="polite">{$messageList}</div>
             <form class="chat-compose" method="post" action="chat">
                 <input name="csrf" type="hidden" value="{$csrf}">
@@ -646,6 +687,47 @@ function site_list_chat_threads(PDO $pdo, int $limit): array
     return array_map('site_row_to_chat_thread', $statement->fetchAll());
 }
 
+function site_search_chat_threads(PDO $pdo, string $query, int $limit): array
+{
+    $terms = site_search_terms($query);
+    if ($terms === []) {
+        return [];
+    }
+    $where = [];
+    $params = [];
+    foreach ($terms as $index => $term) {
+        $title = 'term' . $index . '_title';
+        $channel = 'term' . $index . '_channel';
+        $owner = 'term' . $index . '_owner';
+        $message = 'term' . $index . '_message';
+        $source = 'term' . $index . '_source';
+        $role = 'term' . $index . '_role';
+        $where[] = '(t.title LIKE :' . $title . ' OR t.channel LIKE :' . $channel . ' OR t.owner_context LIKE :' . $owner . ' OR EXISTS (
+            SELECT 1 FROM chat_messages m
+            WHERE m.thread_id = t.id AND (m.text LIKE :' . $message . ' OR m.source LIKE :' . $source . ' OR m.role LIKE :' . $role . ')
+        ))';
+        $value = '%' . addcslashes($term, "\\%_") . '%';
+        foreach ([$title, $channel, $owner, $message, $source, $role] as $name) {
+            $params[$name] = $value;
+        }
+    }
+
+    $statement = $pdo->prepare(
+        'SELECT t.*,
+                (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id = t.id) AS message_count
+         FROM chat_threads t
+         WHERE ' . implode(' OR ', $where) . '
+         ORDER BY t.updated_at DESC
+         LIMIT :limit'
+    );
+    foreach ($params as $name => $value) {
+        $statement->bindValue($name, $value, PDO::PARAM_STR);
+    }
+    $statement->bindValue('limit', $limit, PDO::PARAM_INT);
+    $statement->execute();
+    return array_map('site_row_to_chat_thread', $statement->fetchAll());
+}
+
 function site_get_chat_thread(PDO $pdo, string $id): ?array
 {
     $statement = $pdo->prepare(
@@ -686,6 +768,23 @@ function site_rename_chat_thread(PDO $pdo, string $threadId, string $title): boo
 {
     $statement = $pdo->prepare('UPDATE chat_threads SET title = :title, updated_at = :updated_at WHERE id = :id');
     $statement->execute(['id' => $threadId, 'title' => $title, 'updated_at' => gmdate('Y-m-d H:i:s')]);
+    return $statement->rowCount() > 0;
+}
+
+function site_set_chat_thread_status(PDO $pdo, string $threadId, string $status): bool
+{
+    if (!in_array($status, ['open', 'archived'], true)) {
+        throw new InvalidArgumentException('Ungültiger Status.');
+    }
+    $statement = $pdo->prepare('UPDATE chat_threads SET status = :status, updated_at = :updated_at WHERE id = :id');
+    $statement->execute(['id' => $threadId, 'status' => $status, 'updated_at' => gmdate('Y-m-d H:i:s')]);
+    return $statement->rowCount() > 0;
+}
+
+function site_delete_chat_thread(PDO $pdo, string $threadId): bool
+{
+    $statement = $pdo->prepare('DELETE FROM chat_threads WHERE id = :id');
+    $statement->execute(['id' => $threadId]);
     return $statement->rowCount() > 0;
 }
 
@@ -731,6 +830,141 @@ function site_create_chat_message(PDO $pdo, string $threadId, string $role, stri
     $touch->execute(['id' => $threadId, 'updated_at' => $now]);
 }
 
+function site_get_chat_message(PDO $pdo, string $threadId, string $messageId): ?array
+{
+    $statement = $pdo->prepare('SELECT * FROM chat_messages WHERE id = :id AND thread_id = :thread_id');
+    $statement->execute(['id' => $messageId, 'thread_id' => $threadId]);
+    $row = $statement->fetch();
+    return $row === false ? null : site_row_to_chat_message($row);
+}
+
+function site_create_memory_from_chat_message(PDO $pdo, array $config, string $threadId, string $messageId): array
+{
+    $message = site_get_chat_message($pdo, $threadId, $messageId);
+    if ($message === null) {
+        throw new InvalidArgumentException('Nachricht nicht gefunden.');
+    }
+    if ($message['memory_id'] !== null) {
+        $memory = site_get_memory($pdo, (string)$message['memory_id']);
+        if ($memory !== null) {
+            return $memory;
+        }
+    }
+    $thread = site_get_chat_thread($pdo, $threadId);
+    if ($thread === null) {
+        throw new InvalidArgumentException('Thread nicht gefunden.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $memory = site_create_memory($pdo, $config, [
+            'text' => $message['text'],
+            'tags' => ['chat', (string)$message['role']],
+            'metadata' => [
+                'origin' => 'chat',
+                'chat_thread_id' => $threadId,
+                'chat_thread_title' => $thread['title'],
+                'chat_message_id' => $messageId,
+                'chat_role' => $message['role'],
+                'chat_source' => $message['source'],
+            ],
+            'kind' => 'note',
+            'importance' => 0.5,
+            'scope' => 'personal',
+            'source' => 'openpaw',
+            'source_ref' => 'chat:' . $threadId . ':' . $messageId,
+            'confidence' => 1.0,
+            'visibility' => 'private',
+            'observed_at' => $message['observed_at'],
+        ]);
+        $statement = $pdo->prepare('UPDATE chat_messages SET memory_id = :memory_id WHERE id = :id');
+        $statement->execute(['id' => $messageId, 'memory_id' => $memory['id']]);
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+
+    return $memory;
+}
+
+function site_create_memory(PDO $pdo, array $config, array $payload): array
+{
+    $text = clean_site_string((string)($payload['text'] ?? ''), 8000);
+    $id = bin2hex(random_bytes(16));
+    $tags = site_normalize_tags($payload['tags'] ?? []);
+    $metadata = site_parse_metadata($payload['metadata'] ?? []);
+    $now = gmdate('Y-m-d H:i:s');
+    $observedAt = site_db_datetime_from_api((string)($payload['observed_at'] ?? $now));
+
+    $statement = $pdo->prepare(
+        'INSERT INTO memories
+            (id, text, tags_json, tags_text, metadata_json, kind, importance, scope, source, source_ref, confidence, visibility, observed_at, created_at, updated_at)
+         VALUES
+            (:id, :text, :tags_json, :tags_text, :metadata_json, :kind, :importance, :scope, :source, :source_ref, :confidence, :visibility, :observed_at, :created_at, :updated_at)'
+    );
+    $statement->execute([
+        'id' => $id,
+        'text' => $text,
+        'tags_json' => json_encode($tags, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        'tags_text' => implode(' ', $tags),
+        'metadata_json' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        'kind' => site_allowed_memory_value($config, 'kind', (string)($payload['kind'] ?? 'note')),
+        'importance' => site_unit_float($payload['importance'] ?? 0.5),
+        'scope' => site_allowed_memory_value($config, 'scope', (string)($payload['scope'] ?? 'personal')),
+        'source' => site_allowed_memory_value($config, 'source', (string)($payload['source'] ?? 'openpaw')),
+        'source_ref' => site_optional_string($payload['source_ref'] ?? null, 255),
+        'confidence' => site_unit_float($payload['confidence'] ?? 1.0),
+        'visibility' => site_allowed_memory_value($config, 'visibility', (string)($payload['visibility'] ?? 'private')),
+        'observed_at' => $observedAt,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]);
+
+    return site_get_memory($pdo, $id) ?? throw new RuntimeException('memory disappeared after write');
+}
+
+function site_get_memory(PDO $pdo, string $id): ?array
+{
+    $statement = $pdo->prepare('SELECT * FROM memories WHERE id = :id');
+    $statement->execute(['id' => $id]);
+    $row = $statement->fetch();
+    if ($row === false) {
+        return null;
+    }
+    return [
+        'id' => (string)$row['id'],
+        'text' => (string)$row['text'],
+    ];
+}
+
+function site_list_chat_thread_memories(PDO $pdo, string $threadId, int $limit): array
+{
+    $limit = max(1, min(50, $limit));
+    $statement = $pdo->prepare(
+        'SELECT m.id, m.text, cm.id AS chat_message_id, cm.role, cm.observed_at
+         FROM chat_messages cm
+         INNER JOIN memories m ON m.id = cm.memory_id
+         WHERE cm.thread_id = :thread_id
+         ORDER BY cm.observed_at DESC, cm.created_at DESC
+         LIMIT ' . $limit
+    );
+    $statement->execute(['thread_id' => $threadId]);
+    $rows = [];
+    foreach ($statement->fetchAll() as $row) {
+        $rows[] = [
+            'id' => (string)$row['id'],
+            'text' => (string)$row['text'],
+            'chat_message_id' => (string)$row['chat_message_id'],
+            'role' => (string)$row['role'],
+            'observed_at' => site_db_datetime_to_api((string)$row['observed_at']),
+        ];
+    }
+    return $rows;
+}
+
 function site_row_to_chat_thread(array $row): array
 {
     $metadata = json_decode((string)$row['metadata_json'], true);
@@ -774,13 +1008,64 @@ function render_chat_thread_list(array $threads, ?string $selectedId): string
         $active = $thread['id'] === $selectedId ? ' active' : '';
         $href = 'chat?thread=' . rawurlencode((string)$thread['id']);
         $title = escape((string)$thread['title']);
-        $meta = escape((string)$thread['message_count'] . ' messages');
+        $status = (string)($thread['status'] ?? 'open');
+        $meta = escape((string)$thread['message_count'] . ' messages / ' . $status);
         $html .= '<a class="' . trim($active) . '" href="' . $href . '"><strong>' . $title . '</strong><span>' . $meta . '</span></a>';
     }
     return $html;
 }
 
-function render_chat_message_list(array $messages): string
+function render_chat_thread_tools(string $csrf, array $thread): string
+{
+    $id = escape((string)$thread['id']);
+    $title = escape((string)$thread['title']);
+    $status = (string)$thread['status'];
+    $toggleAction = $status === 'archived' ? 'restore_thread' : 'archive_thread';
+    $toggleLabel = $status === 'archived' ? 'restore' : 'archive';
+
+    return <<<HTML
+<section class="chat-thread-tools" aria-label="Thread tools">
+    <form method="post" action="chat">
+        <input name="csrf" type="hidden" value="{$csrf}">
+        <input name="chat_action" type="hidden" value="rename_thread">
+        <input name="thread_id" type="hidden" value="{$id}">
+        <input name="title" type="text" value="{$title}" maxlength="255" required>
+        <button type="submit">rename</button>
+    </form>
+    <form method="post" action="chat">
+        <input name="csrf" type="hidden" value="{$csrf}">
+        <input name="chat_action" type="hidden" value="{$toggleAction}">
+        <input name="thread_id" type="hidden" value="{$id}">
+        <button type="submit">{$toggleLabel}</button>
+    </form>
+    <form method="post" action="chat">
+        <input name="csrf" type="hidden" value="{$csrf}">
+        <input name="chat_action" type="hidden" value="delete_thread">
+        <input name="thread_id" type="hidden" value="{$id}">
+        <label><input type="checkbox" name="confirm_delete" value="1"> confirm</label>
+        <button class="danger" type="submit">delete</button>
+    </form>
+</section>
+HTML;
+}
+
+function render_chat_thread_memories(array $memories): string
+{
+    if ($memories === []) {
+        return '<section class="chat-thread-memories"><span>thread memories</span><p>No saved memories in this thread.</p></section>';
+    }
+    $items = '';
+    foreach ($memories as $memory) {
+        $id = escape((string)$memory['id']);
+        $role = escape((string)$memory['role']);
+        $time = escape((string)$memory['observed_at']);
+        $text = escape(site_excerpt((string)$memory['text'], 180));
+        $items .= '<li><span>' . $role . ' / ' . $time . ' / ' . $id . '</span><p>' . $text . '</p></li>';
+    }
+    return '<section class="chat-thread-memories"><span>thread memories</span><ul>' . $items . '</ul></section>';
+}
+
+function render_chat_message_list(string $csrf, array $messages): string
 {
     if ($messages === []) {
         return '<article class="chat-message system"><span>system</span><pre>No messages yet.</pre></article>';
@@ -790,7 +1075,13 @@ function render_chat_message_list(array $messages): string
         $role = escape((string)$message['role']);
         $text = escape((string)$message['text']);
         $time = escape((string)$message['observed_at']);
-        $html .= '<article class="chat-message ' . $role . '"><span>' . $role . ' / ' . $time . '</span><pre>' . $text . '</pre></article>';
+        $threadId = escape((string)$message['thread_id']);
+        $messageId = escape((string)$message['id']);
+        $memoryId = $message['memory_id'] === null ? null : escape((string)$message['memory_id']);
+        $memoryControl = $memoryId === null
+            ? '<form method="post" action="chat"><input name="csrf" type="hidden" value="' . $csrf . '"><input name="chat_action" type="hidden" value="save_message_memory"><input name="thread_id" type="hidden" value="' . $threadId . '"><input name="message_id" type="hidden" value="' . $messageId . '"><button type="submit">save memory</button></form>'
+            : '<span class="chat-memory-saved">saved ' . $memoryId . '</span>';
+        $html .= '<article class="chat-message ' . $role . '"><span>' . $role . ' / ' . $time . '</span><pre>' . $text . '</pre><div class="chat-message-actions">' . $memoryControl . '</div></article>';
     }
     return $html;
 }
@@ -802,6 +1093,85 @@ function parse_site_chat_role(string $role): string
         throw new InvalidArgumentException('Ungültige Rolle.');
     }
     return $role;
+}
+
+function site_search_terms(string $query): array
+{
+    preg_match_all('/[\p{L}\p{N}_-]{2,64}/u', $query, $matches);
+    return array_slice(array_values(array_unique($matches[0] ?? [])), 0, 8);
+}
+
+function site_normalize_tags(mixed $value): array
+{
+    if (!is_array($value)) {
+        return [];
+    }
+    $tags = [];
+    foreach ($value as $tag) {
+        if (!is_string($tag)) {
+            continue;
+        }
+        $clean = trim($tag);
+        if ($clean !== '' && !in_array($clean, $tags, true)) {
+            $tags[] = string_slice($clean, 0, 64);
+        }
+    }
+    return array_slice($tags, 0, 32);
+}
+
+function site_parse_metadata(mixed $value): array
+{
+    if (!is_array($value) || array_is_list($value)) {
+        return [];
+    }
+    json_encode($value, JSON_THROW_ON_ERROR);
+    return $value;
+}
+
+function site_allowed_memory_value(array $config, string $field, string $preferred): string
+{
+    $defaults = [
+        'kind' => ['note', 'preference', 'fact', 'task', 'event', 'decision'],
+        'scope' => ['personal', 'project', 'system', 'session'],
+        'visibility' => ['private', 'internal'],
+        'source' => ['api', 'codex', 'openpaw', 'paw', 'signal', 'manual', 'smoke-test'],
+    ];
+    $configured = $config['memory']['allowed_' . $field] ?? ($defaults[$field] ?? []);
+    $allowed = is_array($configured) ? array_values(array_filter($configured, 'is_string')) : ($defaults[$field] ?? []);
+    if ($allowed === []) {
+        $allowed = $defaults[$field] ?? [$preferred];
+    }
+    return in_array($preferred, $allowed, true) ? $preferred : (string)$allowed[0];
+}
+
+function site_unit_float(mixed $value): float
+{
+    if (!is_int($value) && !is_float($value)) {
+        return 0.5;
+    }
+    return max(0.0, min(1.0, (float)$value));
+}
+
+function site_optional_string(mixed $value, int $maxLength): ?string
+{
+    if (!is_string($value)) {
+        return null;
+    }
+    $clean = trim($value);
+    if ($clean === '') {
+        return null;
+    }
+    return string_slice($clean, 0, $maxLength);
+}
+
+function site_db_datetime_from_api(string $value): string
+{
+    try {
+        $datetime = new DateTimeImmutable($value);
+    } catch (Exception) {
+        $datetime = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    }
+    return $datetime->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
 }
 
 function clean_site_id(string $id): string
@@ -979,6 +1349,15 @@ function string_length(string $value): int
 function string_slice(string $value, int $offset, int $length): string
 {
     return function_exists('mb_substr') ? mb_substr($value, $offset, $length, 'UTF-8') : substr($value, $offset, $length);
+}
+
+function site_excerpt(string $value, int $maxLength): string
+{
+    $value = trim(preg_replace('/\s+/', ' ', $value) ?? $value);
+    if (string_length($value) <= $maxLength) {
+        return $value;
+    }
+    return rtrim(string_slice($value, 0, max(0, $maxLength - 3))) . '...';
 }
 
 function is_https(): bool
