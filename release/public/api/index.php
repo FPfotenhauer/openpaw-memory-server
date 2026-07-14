@@ -88,6 +88,12 @@ function main(): void
                 }
                 json_response(200, $thread);
             }
+            if ($method === 'DELETE') {
+                if (!delete_chat_thread($pdo, $id)) {
+                    error_response(404, 'chat thread not found');
+                }
+                json_response(200, ['deleted' => true, 'id' => $id]);
+            }
         }
 
         if (preg_match('#^/chats/([A-Za-z0-9._:-]+)/messages$#', $path, $matches) === 1) {
@@ -622,6 +628,13 @@ function update_chat_thread(PDO $pdo, string $id, array $payload): ?array
     ]);
 
     return get_chat_thread_or_fail($pdo, $id);
+}
+
+function delete_chat_thread(PDO $pdo, string $id): bool
+{
+    $statement = $pdo->prepare('DELETE FROM chat_threads WHERE id = :id');
+    $statement->execute(['id' => $id]);
+    return $statement->rowCount() > 0;
 }
 
 function list_chat_messages(PDO $pdo, string $threadId): array

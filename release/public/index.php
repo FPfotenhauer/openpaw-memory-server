@@ -141,8 +141,9 @@ function handle_login(array $config): never
     ) {
         session_regenerate_id(true);
         $_SESSION['openpaw_logged_in'] = true;
+        $redirectTo = login_redirect_target();
         clear_login_failures($config);
-        redirect('/chat');
+        redirect($redirectTo);
     }
 
     record_login_failure($config);
@@ -231,8 +232,38 @@ function handle_update(array $config): never
 function require_login(): void
 {
     if (!is_logged_in()) {
+        remember_login_target();
         redirect('/login');
     }
+}
+
+function remember_login_target(): void
+{
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    if ($method !== 'GET') {
+        return;
+    }
+
+    $uri = $_SERVER['REQUEST_URI'] ?? '/chat';
+    $path = parse_url($uri, PHP_URL_PATH);
+    if (!is_string($path) || $path === '' || $path === '/login' || $path === '/logout') {
+        return;
+    }
+    $query = parse_url($uri, PHP_URL_QUERY);
+    $target = $path . (is_string($query) && $query !== '' ? '?' . $query : '');
+    if (str_starts_with($target, '/') && !str_starts_with($target, '//')) {
+        $_SESSION['openpaw_login_target'] = $target;
+    }
+}
+
+function login_redirect_target(): string
+{
+    $target = $_SESSION['openpaw_login_target'] ?? '/chat';
+    unset($_SESSION['openpaw_login_target']);
+    if (!is_string($target) || $target === '' || !str_starts_with($target, '/') || str_starts_with($target, '//')) {
+        return '/chat';
+    }
+    return $target;
 }
 
 function is_logged_in(): bool

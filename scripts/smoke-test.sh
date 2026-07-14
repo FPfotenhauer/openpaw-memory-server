@@ -54,3 +54,6 @@ echo
 
 curl -fsS "${AUTH[@]}" "${API_BASE_URL}/chats/${chat_id}/messages"
 echo
+
+curl -fsS -X DELETE "${AUTH[@]}" "${API_BASE_URL}/chats/${chat_id}"
+echo

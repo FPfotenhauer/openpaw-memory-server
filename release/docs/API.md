@@ -206,6 +206,17 @@ curl -fsS \
   "${API_BASE_URL}/chats/<id>"
 ```
 
+Thread löschen:
+
+```bash
+curl -fsS \
+  -X DELETE \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/<id>"
+```
+
+Die zugehörigen Nachrichten werden durch die Datenbankbeziehung mit gelöscht.
+
 Nachricht speichern:
 
 ```bash
