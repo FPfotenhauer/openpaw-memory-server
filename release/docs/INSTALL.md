@@ -14,7 +14,7 @@ Nach der Installation gibt es:
 
 - eine Startseite unter `/`
 - einen Login unter `/login`
-- einen geschützten Chat-Platzhalter unter `/chat`
+- einen geschützten Chatbereich unter `/chat`
 - die unabhängige Memory-API unter `/api`
 - private Konfiguration und Backups außerhalb des öffentlichen Webroots oder
   durch Zugriffsschutz abgesichert
@@ -94,7 +94,8 @@ Alternative ohne Web-Installer:
 php release/tools/init-db.php
 ```
 
-Das Schema legt die Tabelle `memories` an. Diese enthält unter anderem:
+Das Schema legt die Tabellen `memories`, `chat_threads` und `chat_messages` an.
+`memories` enthält unter anderem:
 
 - Text und Tags
 - `metadata`
@@ -106,6 +107,9 @@ Das Schema legt die Tabelle `memories` an. Diese enthält unter anderem:
 - `observed_at`
 - Zeitstempel
 - Fulltext-Index für einfache Suche
+
+Die Chat-Tabellen speichern Threads und Nachrichten getrennt von den
+kuratierten Memory-Einträgen.
 
 ## Dateien hochladen
 
@@ -368,6 +372,6 @@ Wenn die Tests erfolgreich sind:
 
 1. API-Token in OpenPaw/Paw eintragen.
 2. `API_BASE_URL` mit `/api` verwenden.
-3. Nur notwendige Clients freischalten.
-4. Backup-Strategie festlegen.
-5. Erst danach den späteren Chat ausbauen.
+3. Chat unter `/chat` testen.
+4. Nur notwendige Clients freischalten.
+5. Backup-Strategie festlegen.

@@ -1,9 +1,9 @@
 # OpenPaw Memory Server
 
 Kleiner PHP/MariaDB-Memory-Server für OpenPaw/Paw. Der Fokus liegt auf robustem
-Speichern, Lesen und Suchen von Erinnerungen. Die Website bietet zunächst nur
-Startseite, Login und einen geschützten Chat-Platzhalter; spätere Clients wie
-Signal können dieselbe API nutzen.
+Speichern, Lesen und Suchen von Erinnerungen. Die Website bietet Startseite,
+Login und einen geschützten Chatbereich; spätere Clients wie Signal können
+dieselbe API nutzen.
 
 ## Architektur
 
@@ -16,11 +16,14 @@ Signal können dieselbe API nutzen.
 - MariaDB ist die Primärdatenbank. SQLite bleibt nur ein möglicher späterer
   Fallback, falls wirklich nötig.
 
-Die Website stellt Startseite, Login und eine geschützte Chat-Platzhalterseite
-bereit. Die API bleibt davon getrennt und speichert Erinnerungen mit Text, Tags,
-Metadaten, Art, Wichtigkeit, Scope, Quelle, Confidence, Visibility und
-Zeitstempeln. Die Suche verwendet MariaDB-Fulltext; falls der Fulltext-Index
-nicht nutzbar ist, fällt die API auf einfache `LIKE`-Suche zurück.
+Die Website stellt Startseite, Login und einen geschützten Chatbereich bereit.
+Der Chat speichert Threads und Nachrichten serverseitig, ohne den API-Token an
+den Browser auszugeben. Chatnachrichten und Memory-Einträge bleiben getrennt,
+können aber über Referenzen verbunden werden. Die API speichert Erinnerungen mit
+Text, Tags, Metadaten, Art, Wichtigkeit, Scope, Quelle, Confidence, Visibility
+und Zeitstempeln. Die Suche verwendet MariaDB-Fulltext; falls der
+Fulltext-Index nicht nutzbar ist, fällt die API auf einfache `LIKE`-Suche
+zurück.
 
 ## Realistische Webspace-Annahmen
 
@@ -202,6 +205,18 @@ Standardmäßig erlaubte Klassifizierungswerte:
 - `source`: `api`, `codex`, `openpaw`, `paw`, `signal`, `manual`, `smoke-test`
 
 Diese Listen können in `private/config.php` unter `memory.allowed_*` erweitert
+werden.
+
+## Chat-Modell
+
+Die Chatfunktion nutzt eigene Tabellen:
+
+- `chat_threads`: Titel, Kanal, Kontext, Status, Metadaten und Zeitstempel.
+- `chat_messages`: Rolle, Text, Quelle, optionale externe Message-ID,
+  optionale `memory_id`, Metadaten und Zeitstempel.
+
+Rohverläufe bleiben Chatdaten. Dauerhaft wichtige Erkenntnisse gehören als
+kuratierte Einträge in `memories` und können von Chatnachrichten referenziert
 werden.
 
 ## Backup-Konzept

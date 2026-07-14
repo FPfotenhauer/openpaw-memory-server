@@ -8,7 +8,7 @@ vorbereitet.
 - `/`: Startseite / Landing-Page.
 - `/install`: einmaliger Web-Installer, nur solange keine Config existiert.
 - `/login`: Login für den privaten Webbereich.
-- `/chat`: geschützte Platzhalterseite für den späteren OpenPaw-Chat.
+- `/chat`: geschützter Chatbereich mit Threadliste und Nachrichtenverlauf.
 - `/api/health`: API-Health-Check.
 - `/api/memories`: Memory-API.
 - `/api/backups`: Backup-API, nur wenn aktiviert.
@@ -30,14 +30,25 @@ php -r 'echo password_hash("REPLACE_WITH_PASSWORD", PASSWORD_DEFAULT), PHP_EOL;'
 Die Beispielconfig enthält nur Platzhalter. Keine echten Zugangsdaten ins Repo
 schreiben.
 
+## Chatbereich
+
+Der Chat unter `/chat` nutzt die Website-Session und greift serverseitig auf die
+Chat-Tabellen in MariaDB zu. Der API-Token wird dabei nicht an den Browser
+ausgegeben.
+
+Die erste Ausbaustufe bietet:
+
+- linke Spalte mit Chat-Threads
+- Hauptbereich mit Nachrichtenverlauf
+- Eingabeformular für neue Nachrichten
+- Rollenkennzeichnung für `frank`, `paw`, `system` und `external`
+
 ## Design
 
-Das aktuelle HTML/CSS ist nur eine robuste Struktur für spätere Gestaltung:
+Das Website-HTML/CSS liegt in:
 
-- Landing-Page in `public/index.php`.
+- Landing-Page und Chat in `public/index.php`.
 - Styles in `public/assets/site.css`.
-- Geschützter Chat-Platzhalter in der Route `/chat`.
 
-Das spätere Design kann hauptsächlich über `site.css` und die Render-Funktionen
-in `public/index.php` umgesetzt werden, ohne die API unter `public/api/` zu
-ändern.
+Das Design kann hauptsächlich über `site.css` und die Render-Funktionen in
+`public/index.php` umgesetzt werden, ohne die API unter `public/api/` zu ändern.

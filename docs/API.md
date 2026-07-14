@@ -167,6 +167,71 @@ Antwort:
 }
 ```
 
+## Chats
+
+Chatnachrichten bleiben von Memory-Einträgen getrennt. Ein Chat besteht aus
+einem Thread und beliebig vielen Nachrichten. Nachrichten können optional über
+`memory_id` auf kuratierte Memory-Einträge verweisen.
+
+Thread anlegen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Paw / Frank","channel":"web","owner_context":"openpaw"}' \
+  "${API_BASE_URL}/chats"
+```
+
+Threads auflisten:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats?limit=20&offset=0"
+```
+
+Thread lesen oder aktualisieren:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/<id>"
+
+curl -fsS \
+  -X PATCH \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Paw / Frank notes","status":"open"}' \
+  "${API_BASE_URL}/chats/<id>"
+```
+
+Nachricht speichern:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"role":"frank","text":"Bitte merk dir diesen Verlauf.","source":"web"}' \
+  "${API_BASE_URL}/chats/<id>/messages"
+```
+
+Nachrichten lesen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/<id>/messages?limit=50&offset=0"
+```
+
+Wichtige Felder:
+
+- Thread: `title`, `channel`, `owner_context`, `status`, `metadata`.
+- Message: `role`, `text`, `source`, `external_message_id`, `memory_id`,
+  `metadata`, `observed_at`.
+- Erlaubte Rollen: `frank`, `paw`, `system`, `external`.
+- Erlaubte Thread-Statuswerte: `open`, `archived`.
+
 ## Backup erstellen
 
 Backups sind standardmäßig deaktiviert. Wenn sie in der Config aktiviert sind,
@@ -264,7 +329,7 @@ Wichtige Statuscodes:
 - `400`: ungültige Eingabe.
 - `401`: fehlender oder falscher Bearer Token.
 - `403`: fehlender oder falscher Backup-Token.
-- `404`: Endpunkt oder Erinnerung nicht gefunden.
+- `404`: Endpunkt, Erinnerung oder Chat-Thread nicht gefunden.
 - `409`: ID existiert bereits.
 - `413`: Request Body zu groß.
 - `429`: Rate Limit überschritten.
@@ -276,7 +341,7 @@ Wichtige Statuscodes:
   ob eine Erinnerung aus Codex, OpenPaw/Paw, Signal oder manueller Pflege kam.
 - Tags sollten klein und stabil bleiben, z. B. `frank`, `preference`, `project`,
   `server`, `security`.
-- Für Chat-Integration sollte der Client vor einer Antwort suchen und nur bei
-  hoher Relevanz neue Erinnerungen schreiben.
-- Lösch- und Backup-Funktionen sollten nicht an allgemeine Chat-Befehle
-  gekoppelt werden.
+- Rohverläufe gehören in `chat_messages`; dauerhaft wichtige Erkenntnisse
+  gehören kuratiert in `memories` und können per `memory_id` verlinkt werden.
+- Löschbefehle sollten eine explizite ID verlangen. Backup-Funktionen sollten
+  nicht an allgemeine Chat-Befehle gekoppelt werden.

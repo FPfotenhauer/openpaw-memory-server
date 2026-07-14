@@ -10,7 +10,7 @@ OpenPaw-Memory-Servers mit Website, Login-Bereich und unabhängiger Memory-API.
 - [Installation](INSTALL.md): Schrittweise Installation aus dem `release/`
   Paket auf einem PHP-Webspace.
 - [Releases](RELEASE.md): Version erhöhen und das `release/` Paket neu bauen.
-- [Website-Struktur](WEBSITE.md): Startseite, Login, geschützter Chat-Bereich
+- [Website-Struktur](WEBSITE.md): Startseite, Login, geschützter Chatbereich
   und Trennung von Website und API.
 - [API-Nutzung](API.md): Endpunkte, Authentifizierung, Memory-Datenmodell,
   `curl`-Beispiele und Fehlercodes.
@@ -29,7 +29,7 @@ OpenPaw-Memory-Servers mit Website, Login-Bereich und unabhängiger Memory-API.
 
 - Website: `/`
 - Login: `/login`
-- geschützter Chat-Platzhalter: `/chat`
+- geschützter Chatbereich: `/chat`
 - API-Basis: `/api`
 - API-Health: `/api/health`
 - Memory-Endpunkte: `/api/memories`
@@ -39,5 +39,5 @@ OpenPaw-Memory-Servers mit Website, Login-Bereich und unabhängiger Memory-API.
 - Keine echten Tokens, Domains, Hoster-Details oder Zugangsdaten in die
   Dokumentation schreiben.
 - Die API bleibt unabhängig von der Landing-Page erreichbar.
-- Die aktuelle Chat-Seite ist nur vorbereitet; die OpenPaw-Anbindung folgt
-  später.
+- Der Webchat nutzt die Website-Session und hält den API-Token aus dem Browser
+  heraus.

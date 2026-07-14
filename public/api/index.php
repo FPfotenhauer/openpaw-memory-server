@@ -64,6 +64,45 @@ function main(): void
             }
         }
 
+        if ($method === 'GET' && $path === '/chats') {
+            json_response(200, ['chats' => list_chat_threads($pdo)]);
+        }
+
+        if ($method === 'POST' && $path === '/chats') {
+            json_response(201, create_chat_thread($pdo, read_json_body()));
+        }
+
+        if (preg_match('#^/chats/([A-Za-z0-9._:-]+)$#', $path, $matches) === 1) {
+            $id = $matches[1];
+            if ($method === 'GET') {
+                $thread = get_chat_thread($pdo, $id);
+                if ($thread === null) {
+                    error_response(404, 'chat thread not found');
+                }
+                json_response(200, $thread);
+            }
+            if ($method === 'PATCH') {
+                $thread = update_chat_thread($pdo, $id, read_json_body());
+                if ($thread === null) {
+                    error_response(404, 'chat thread not found');
+                }
+                json_response(200, $thread);
+            }
+        }
+
+        if (preg_match('#^/chats/([A-Za-z0-9._:-]+)/messages$#', $path, $matches) === 1) {
+            $threadId = $matches[1];
+            if ($method === 'GET') {
+                if (get_chat_thread($pdo, $threadId) === null) {
+                    error_response(404, 'chat thread not found');
+                }
+                json_response(200, ['messages' => list_chat_messages($pdo, $threadId)]);
+            }
+            if ($method === 'POST') {
+                json_response(201, create_chat_message($pdo, $threadId, read_json_body()));
+            }
+        }
+
         if ($method === 'POST' && $path === '/backups') {
             require_backup_access($config);
             json_response(201, create_backup($pdo, $config));
@@ -468,6 +507,258 @@ function row_to_memory(array $row): array
         'created_at' => db_datetime_to_api((string)$row['created_at']),
         'updated_at' => db_datetime_to_api((string)$row['updated_at']),
     ];
+}
+
+function list_chat_threads(PDO $pdo): array
+{
+    $limit = clamp_int($_GET['limit'] ?? 20, 1, 100);
+    $offset = clamp_int($_GET['offset'] ?? 0, 0, 100000);
+    $statement = $pdo->prepare(
+        'SELECT t.*,
+                (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id = t.id) AS message_count
+         FROM chat_threads t
+         ORDER BY t.updated_at DESC
+         LIMIT :limit OFFSET :offset'
+    );
+    $statement->bindValue('limit', $limit, PDO::PARAM_INT);
+    $statement->bindValue('offset', $offset, PDO::PARAM_INT);
+    $statement->execute();
+    return array_map('row_to_chat_thread', $statement->fetchAll());
+}
+
+function create_chat_thread(PDO $pdo, array $payload): array
+{
+    $id = isset($payload['id']) ? clean_required_string($payload['id'], 'id') : bin2hex(random_bytes(16));
+    validate_id($id);
+    $title = clean_limited_string($payload['title'] ?? 'New chat', 'title', 255);
+    $channel = clean_limited_string($payload['channel'] ?? 'web', 'channel', 64);
+    $ownerContext = clean_limited_string($payload['owner_context'] ?? 'openpaw', 'owner_context', 128);
+    $status = parse_chat_status($payload['status'] ?? 'open');
+    $metadata = parse_metadata($payload['metadata'] ?? []);
+    $now = utc_now();
+
+    try {
+        $statement = $pdo->prepare(
+            'INSERT INTO chat_threads
+                (id, title, channel, owner_context, status, metadata_json, created_at, updated_at)
+             VALUES
+                (:id, :title, :channel, :owner_context, :status, :metadata_json, :created_at, :updated_at)'
+        );
+        $statement->execute([
+            'id' => $id,
+            'title' => $title,
+            'channel' => $channel,
+            'owner_context' => $ownerContext,
+            'status' => $status,
+            'metadata_json' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+    } catch (PDOException $exception) {
+        if ($exception->getCode() === '23000') {
+            error_response(409, 'chat thread id already exists');
+        }
+        throw $exception;
+    }
+
+    return get_chat_thread_or_fail($pdo, $id);
+}
+
+function get_chat_thread(PDO $pdo, string $id): ?array
+{
+    $statement = $pdo->prepare(
+        'SELECT t.*,
+                (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id = t.id) AS message_count
+         FROM chat_threads t
+         WHERE t.id = :id'
+    );
+    $statement->execute(['id' => $id]);
+    $row = $statement->fetch();
+    return $row === false ? null : row_to_chat_thread($row);
+}
+
+function get_chat_thread_or_fail(PDO $pdo, string $id): array
+{
+    $thread = get_chat_thread($pdo, $id);
+    if ($thread === null) {
+        throw new RuntimeException('chat thread disappeared after write');
+    }
+    return $thread;
+}
+
+function update_chat_thread(PDO $pdo, string $id, array $payload): ?array
+{
+    $current = get_chat_thread($pdo, $id);
+    if ($current === null) {
+        return null;
+    }
+
+    $title = array_key_exists('title', $payload) ? clean_limited_string($payload['title'], 'title', 255) : $current['title'];
+    $channel = array_key_exists('channel', $payload) ? clean_limited_string($payload['channel'], 'channel', 64) : $current['channel'];
+    $ownerContext = array_key_exists('owner_context', $payload)
+        ? clean_limited_string($payload['owner_context'], 'owner_context', 128)
+        : $current['owner_context'];
+    $status = array_key_exists('status', $payload) ? parse_chat_status($payload['status']) : $current['status'];
+    $metadata = array_key_exists('metadata', $payload) ? parse_metadata($payload['metadata']) : $current['metadata'];
+
+    $statement = $pdo->prepare(
+        'UPDATE chat_threads
+         SET title = :title,
+             channel = :channel,
+             owner_context = :owner_context,
+             status = :status,
+             metadata_json = :metadata_json,
+             updated_at = :updated_at
+         WHERE id = :id'
+    );
+    $statement->execute([
+        'id' => $id,
+        'title' => $title,
+        'channel' => $channel,
+        'owner_context' => $ownerContext,
+        'status' => $status,
+        'metadata_json' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        'updated_at' => utc_now(),
+    ]);
+
+    return get_chat_thread_or_fail($pdo, $id);
+}
+
+function list_chat_messages(PDO $pdo, string $threadId): array
+{
+    $limit = clamp_int($_GET['limit'] ?? 50, 1, 200);
+    $offset = clamp_int($_GET['offset'] ?? 0, 0, 100000);
+    $statement = $pdo->prepare(
+        'SELECT * FROM chat_messages
+         WHERE thread_id = :thread_id
+         ORDER BY observed_at ASC, created_at ASC, id ASC
+         LIMIT :limit OFFSET :offset'
+    );
+    $statement->bindValue('thread_id', $threadId, PDO::PARAM_STR);
+    $statement->bindValue('limit', $limit, PDO::PARAM_INT);
+    $statement->bindValue('offset', $offset, PDO::PARAM_INT);
+    $statement->execute();
+    return array_map('row_to_chat_message', $statement->fetchAll());
+}
+
+function create_chat_message(PDO $pdo, string $threadId, array $payload): array
+{
+    if (get_chat_thread($pdo, $threadId) === null) {
+        error_response(404, 'chat thread not found');
+    }
+
+    $id = isset($payload['id']) ? clean_required_string($payload['id'], 'id') : bin2hex(random_bytes(16));
+    validate_id($id);
+    $role = parse_chat_role($payload['role'] ?? 'frank');
+    $text = clean_required_string($payload['text'] ?? null, 'text');
+    $source = clean_limited_string($payload['source'] ?? 'web', 'source', 128);
+    $externalMessageId = parse_optional_string($payload['external_message_id'] ?? null, 'external_message_id', 255);
+    $memoryId = parse_optional_string($payload['memory_id'] ?? null, 'memory_id', 128);
+    if ($memoryId !== null) {
+        validate_id($memoryId);
+    }
+    $metadata = parse_metadata($payload['metadata'] ?? []);
+    $now = utc_now();
+    $observedAt = parse_datetime($payload['observed_at'] ?? $now, 'observed_at');
+
+    try {
+        $statement = $pdo->prepare(
+            'INSERT INTO chat_messages
+                (id, thread_id, role, text, source, external_message_id, memory_id, metadata_json, observed_at, created_at)
+             VALUES
+                (:id, :thread_id, :role, :text, :source, :external_message_id, :memory_id, :metadata_json, :observed_at, :created_at)'
+        );
+        $statement->execute([
+            'id' => $id,
+            'thread_id' => $threadId,
+            'role' => $role,
+            'text' => $text,
+            'source' => $source,
+            'external_message_id' => $externalMessageId,
+            'memory_id' => $memoryId,
+            'metadata_json' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            'observed_at' => $observedAt,
+            'created_at' => $now,
+        ]);
+        touch_chat_thread($pdo, $threadId);
+    } catch (PDOException $exception) {
+        if ($exception->getCode() === '23000') {
+            error_response(409, 'chat message id or external message id already exists');
+        }
+        throw $exception;
+    }
+
+    return get_chat_message_or_fail($pdo, $id);
+}
+
+function get_chat_message_or_fail(PDO $pdo, string $id): array
+{
+    $statement = $pdo->prepare('SELECT * FROM chat_messages WHERE id = :id');
+    $statement->execute(['id' => $id]);
+    $row = $statement->fetch();
+    if ($row === false) {
+        throw new RuntimeException('chat message disappeared after write');
+    }
+    return row_to_chat_message($row);
+}
+
+function touch_chat_thread(PDO $pdo, string $threadId): void
+{
+    $statement = $pdo->prepare('UPDATE chat_threads SET updated_at = :updated_at WHERE id = :id');
+    $statement->execute(['id' => $threadId, 'updated_at' => utc_now()]);
+}
+
+function row_to_chat_thread(array $row): array
+{
+    $metadata = json_decode((string)$row['metadata_json'], true);
+    return [
+        'id' => (string)$row['id'],
+        'title' => (string)$row['title'],
+        'channel' => (string)$row['channel'],
+        'owner_context' => (string)$row['owner_context'],
+        'status' => (string)$row['status'],
+        'metadata' => is_array($metadata) && !array_is_list($metadata) ? $metadata : new stdClass(),
+        'message_count' => isset($row['message_count']) ? (int)$row['message_count'] : null,
+        'created_at' => db_datetime_to_api((string)$row['created_at']),
+        'updated_at' => db_datetime_to_api((string)$row['updated_at']),
+    ];
+}
+
+function row_to_chat_message(array $row): array
+{
+    $metadata = json_decode((string)$row['metadata_json'], true);
+    return [
+        'id' => (string)$row['id'],
+        'thread_id' => (string)$row['thread_id'],
+        'role' => (string)$row['role'],
+        'text' => (string)$row['text'],
+        'source' => (string)$row['source'],
+        'external_message_id' => $row['external_message_id'] === null ? null : (string)$row['external_message_id'],
+        'memory_id' => $row['memory_id'] === null ? null : (string)$row['memory_id'],
+        'metadata' => is_array($metadata) && !array_is_list($metadata) ? $metadata : new stdClass(),
+        'observed_at' => db_datetime_to_api((string)$row['observed_at']),
+        'created_at' => db_datetime_to_api((string)$row['created_at']),
+    ];
+}
+
+function parse_chat_role(mixed $value): string
+{
+    $role = clean_limited_string($value, 'role', 32);
+    $allowed = ['frank', 'paw', 'system', 'external'];
+    if (!in_array($role, $allowed, true)) {
+        throw new InvalidArgumentException('role must be one of: ' . implode(', ', $allowed));
+    }
+    return $role;
+}
+
+function parse_chat_status(mixed $value): string
+{
+    $status = clean_limited_string($value, 'status', 32);
+    $allowed = ['open', 'archived'];
+    if (!in_array($status, $allowed, true)) {
+        throw new InvalidArgumentException('status must be one of: ' . implode(', ', $allowed));
+    }
+    return $status;
 }
 
 function create_backup(PDO $pdo, array $config): array

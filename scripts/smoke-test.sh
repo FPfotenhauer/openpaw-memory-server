@@ -34,3 +34,23 @@ echo
 
 curl -fsS -X DELETE "${AUTH[@]}" "${API_BASE_URL}/memories/${memory_id}"
 echo
+
+chat="$(
+  curl -fsS "${AUTH[@]}" \
+    -H 'Content-Type: application/json' \
+    -d '{"title":"OpenPaw smoke test chat","channel":"smoke-test","owner_context":"system","metadata":{"test":true}}' \
+    "${API_BASE_URL}/chats"
+)"
+echo "${chat}"
+echo
+
+chat_id="$(php -r '$j=json_decode(stream_get_contents(STDIN), true); echo $j["id"];' <<<"${chat}")"
+
+curl -fsS "${AUTH[@]}" \
+  -H 'Content-Type: application/json' \
+  -d '{"role":"system","text":"OpenPaw smoke test chat message","source":"smoke-test","metadata":{"test":true}}' \
+  "${API_BASE_URL}/chats/${chat_id}/messages"
+echo
+
+curl -fsS "${AUTH[@]}" "${API_BASE_URL}/chats/${chat_id}/messages"
+echo

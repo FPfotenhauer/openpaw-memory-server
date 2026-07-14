@@ -218,7 +218,9 @@ p {
 }
 
 :root[data-theme="light"] .auth-form input,
+:root[data-theme="light"] .chat-new-form input,
 :root[data-theme="light"] .chat-compose,
+:root[data-theme="light"] .chat-compose select,
 :root[data-theme="light"] .installer input:not([type="checkbox"]),
 :root[data-theme="light"] .installer pre,
 :root[data-theme="light"] .installer textarea {
@@ -486,7 +488,7 @@ p {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    padding: 18px;
+    padding: 18px 18px 66px;
     border-right: 1px solid var(--line-soft);
     background: #100d09;
 }
@@ -504,13 +506,30 @@ p {
     gap: 5px;
 }
 
-.chat-list a {
+.chat-list a,
+.chat-list-empty {
+    display: grid;
+    gap: 3px;
     min-height: 32px;
     border-radius: 11px;
     padding: 8px 10px;
     color: var(--muted);
     font-size: 0.76rem;
     text-decoration: none;
+}
+
+.chat-list a strong {
+    color: inherit;
+    font-size: 0.78rem;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.chat-list a span,
+.chat-list-empty {
+    color: var(--faint);
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.66rem;
 }
 
 .chat-list a.active,
@@ -538,34 +557,75 @@ p {
     line-height: 1;
 }
 
-.chat-empty {
-    display: grid;
-    place-items: center;
-    align-content: center;
-    gap: 14px;
+.chat-subtitle {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+}
+
+.chat-error {
+    margin: 16px 0 0;
+    border: 1px solid rgba(255, 124, 124, 0.45);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: rgba(255, 124, 124, 0.08);
+    color: var(--danger);
+}
+
+.chat-log {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
     min-height: 420px;
-    text-align: center;
+    padding: 24px 0;
+    overflow-y: auto;
 }
 
-.chat-empty img {
-    width: 112px;
-    height: 112px;
+.chat-message {
+    display: grid;
+    gap: 6px;
+    width: min(760px, 100%);
 }
 
-.mascot-animated {
-    animation: mascot-bob 3.2s ease-in-out infinite;
-    transform-origin: 50% 82%;
+.chat-message.frank {
+    align-self: flex-end;
+    width: min(620px, 100%);
 }
 
-@keyframes mascot-bob {
-    0%,
-    100% {
-        transform: translateY(0) rotate(-1deg);
-    }
+.chat-message span {
+    color: var(--faint);
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
 
-    50% {
-        transform: translateY(-8px) rotate(1deg);
-    }
+.chat-message.frank span {
+    text-align: right;
+}
+
+.chat-message pre {
+    margin: 0;
+    border: 1px solid var(--line-soft);
+    border-radius: 14px;
+    padding: 12px 14px;
+    background: #0c0a07;
+    color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+}
+
+.chat-message.frank pre {
+    border-color: rgba(255, 159, 47, 0.32);
+    background: var(--panel-strong);
+}
+
+.chat-message.system pre {
+    color: var(--muted);
 }
 
 @keyframes mascot-icon-bob {
@@ -580,27 +640,14 @@ p {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .mascot-icon,
-    .mascot-animated {
+    .mascot-icon {
         animation: none;
     }
 }
 
-.chat-empty p {
-    max-width: 390px;
-    margin: 0;
-    color: var(--muted);
-    font-size: 0.78rem;
-    line-height: 1.5;
-}
-
-.chat-empty code {
-    color: var(--accent-strong);
-}
-
 .chat-compose {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(110px, 0.18fr) minmax(0, 1fr) auto;
     gap: 8px;
     border: 1px solid var(--line);
     border-radius: 17px;
@@ -608,6 +655,13 @@ p {
     background: #0c0a07;
 }
 
+.chat-new-form {
+    display: grid;
+    gap: 8px;
+}
+
+.chat-new-form input,
+.chat-compose select,
 .chat-compose input {
     min-width: 0;
     min-height: 36px;
@@ -618,12 +672,20 @@ p {
     font-size: 0.78rem;
 }
 
+.chat-new-form input,
+.chat-compose select {
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    background: #0c0a07;
+}
+
 .chat-compose input::placeholder {
     color: var(--faint);
 }
 
 .chat-compose button:disabled,
-.chat-compose input:disabled {
+.chat-compose input:disabled,
+.chat-compose select:disabled {
     cursor: not-allowed;
     opacity: 0.72;
 }

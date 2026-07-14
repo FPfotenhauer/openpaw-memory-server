@@ -40,6 +40,9 @@ cp "${ROOT}/private/.htaccess" "${RELEASE}/private/.htaccess"
 cp "${ROOT}/private/config.example.php" "${RELEASE}/private/config.example.php"
 
 cp "${ROOT}/sql/schema.mariadb.sql" "${RELEASE}/sql/schema.mariadb.sql"
+if compgen -G "${ROOT}/sql/migrations/*.sql" > /dev/null; then
+  cp "${ROOT}"/sql/migrations/*.sql "${RELEASE}/sql/migrations/"
+fi
 touch "${RELEASE}/sql/migrations/.gitkeep"
 
 cp "${ROOT}/tools/init-db.php" "${RELEASE}/tools/init-db.php"
