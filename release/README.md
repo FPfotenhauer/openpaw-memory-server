@@ -1,4 +1,4 @@
-# OpenPaw Release-Paket 0.5.0
+# OpenPaw Release-Paket 0.6.0
 
 Dieses Verzeichnis enthält die Dateien, die später als Paket auf den Webspace
 kopiert werden können.
