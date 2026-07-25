@@ -209,6 +209,7 @@ function handle_chat(array $config): never
             if (!site_delete_chat_thread($pdo, $threadId)) {
                 chat_flash('Thread nicht gefunden.');
             }
+            forget_selected_chat_thread($threadId);
             redirect('/chat');
         }
 
@@ -299,6 +300,27 @@ function login_redirect_target(): string
 function is_logged_in(): bool
 {
     return ($_SESSION['openpaw_logged_in'] ?? false) === true;
+}
+
+function selected_chat_thread_id(): ?string
+{
+    $threadId = $_SESSION['openpaw_selected_chat_thread'] ?? null;
+    if (!is_string($threadId) || preg_match('/\A[A-Za-z0-9._:-]{1,128}\z/', $threadId) !== 1) {
+        return null;
+    }
+    return $threadId;
+}
+
+function remember_selected_chat_thread(string $threadId): void
+{
+    $_SESSION['openpaw_selected_chat_thread'] = clean_site_id($threadId);
+}
+
+function forget_selected_chat_thread(string $threadId): void
+{
+    if (selected_chat_thread_id() === $threadId) {
+        unset($_SESSION['openpaw_selected_chat_thread']);
+    }
 }
 
 function render_home(bool $loggedIn): string
@@ -399,11 +421,19 @@ function render_chat(array $config): string
         $pdo = connect_site_db($config);
         $query = trim((string)($_GET['q'] ?? ''));
         $threads = $query === '' ? site_list_chat_threads($pdo, 50) : site_search_chat_threads($pdo, $query, 50);
-        $selectedId = isset($_GET['thread']) ? clean_site_id((string)$_GET['thread']) : ($threads[0]['id'] ?? null);
+        $selectedId = isset($_GET['thread'])
+            ? clean_site_id((string)$_GET['thread'])
+            : ($query === '' ? selected_chat_thread_id() : null);
+        $selectedId ??= $threads[0]['id'] ?? null;
         $selected = $selectedId === null ? null : site_get_chat_thread($pdo, $selectedId);
         if ($selected === null && $threads !== []) {
             $selected = $threads[0];
             $selectedId = $selected['id'];
+        } elseif ($selected === null) {
+            $selectedId = null;
+        }
+        if ($selected !== null) {
+            remember_selected_chat_thread((string)$selected['id']);
         }
         $messages = $selectedId === null ? [] : site_list_chat_messages($pdo, $selectedId, 200);
         $threadMemories = $selectedId === null ? [] : site_list_chat_thread_memories($pdo, $selectedId, 10);
@@ -1222,6 +1252,7 @@ function site_db_datetime_to_api(string $value): string
 function render_page(string $title, string $body): never
 {
     $safeTitle = escape($title);
+    $assetVersion = rawurlencode(site_asset_version());
     echo <<<HTML
 <!doctype html>
 <html lang="de">
@@ -1229,8 +1260,8 @@ function render_page(string $title, string $body): never
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{$safeTitle}</title>
-    <link rel="stylesheet" href="assets/site.css">
-    <script src="assets/theme.js" defer></script>
+    <link rel="stylesheet" href="assets/site.css?v={$assetVersion}">
+    <script src="assets/theme.js?v={$assetVersion}" defer></script>
 </head>
 <body>
     {$body}
@@ -1238,6 +1269,16 @@ function render_page(string $title, string $body): never
 </html>
 HTML;
     exit;
+}
+
+function site_asset_version(): string
+{
+    $path = PROJECT_ROOT . '/VERSION';
+    if (!is_file($path)) {
+        return 'dev';
+    }
+    $version = trim((string)file_get_contents($path));
+    return $version === '' ? 'dev' : $version;
 }
 
 function redirect(string $path): never

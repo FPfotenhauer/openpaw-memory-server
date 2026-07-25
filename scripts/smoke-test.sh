@@ -57,8 +57,26 @@ echo
 
 chat_message_id="$(php -r '$j=json_decode(stream_get_contents(STDIN), true); echo $j["id"];' <<<"${chat_message}")"
 
-curl -fsS "${AUTH[@]}" "${API_BASE_URL}/chats/${chat_id}/messages"
+chat_history="$(
+  curl -fsS "${AUTH[@]}" "${API_BASE_URL}/chats/${chat_id}/messages"
+)"
+echo "${chat_history}"
 echo
+
+php -r '
+$json = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+$messages = $json["messages"] ?? [];
+$expected = $argv[1];
+foreach ($messages as $message) {
+    if (($message["id"] ?? null) === $expected
+        && ($message["text"] ?? null) === "OpenPaw smoke test chat message"
+    ) {
+        exit(0);
+    }
+}
+fwrite(STDERR, "created chat message missing from history\n");
+exit(1);
+' "${chat_message_id}" <<<"${chat_history}"
 
 chat_memory="$(
   curl -fsS -X POST "${AUTH[@]}" \

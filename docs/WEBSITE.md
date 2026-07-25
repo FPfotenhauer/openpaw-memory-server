@@ -35,7 +35,9 @@ schreiben.
 
 Der Chat unter `/chat` nutzt die Website-Session und greift serverseitig auf die
 Chat-Tabellen in MariaDB zu. Der API-Token wird dabei nicht an den Browser
-ausgegeben.
+ausgegeben. Der zuletzt geöffnete Thread wird in der Website-Session gemerkt und
+beim nächsten Aufruf von `/chat` wieder angezeigt. Die eigentliche Historie
+liegt dauerhaft in MariaDB und bleibt deshalb auch nach dem Logout erhalten.
 
 Die erste Ausbaustufe bietet:
 
