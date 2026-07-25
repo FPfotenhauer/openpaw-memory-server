@@ -72,6 +72,14 @@ function main(): void
             json_response(201, create_chat_thread($pdo, read_json_body()));
         }
 
+        if ($method === 'POST' && $path === '/bridge/messages/claim') {
+            json_response(200, claim_bridge_messages($pdo, $config, read_json_body()));
+        }
+
+        if ($method === 'POST' && preg_match('#^/bridge/messages/([A-Za-z0-9._:-]+)/reply$#', $path, $matches) === 1) {
+            json_response(201, reply_to_bridge_message($pdo, $matches[1], read_json_body()));
+        }
+
         if ($method === 'GET' && $path === '/chats/search') {
             $query = trim((string)($_GET['q'] ?? ''));
             json_response(200, ['query' => $query, 'chats' => search_chat_threads($pdo, $query)]);
@@ -709,6 +717,27 @@ function list_chat_messages(PDO $pdo, string $threadId): array
 {
     $limit = clamp_int($_GET['limit'] ?? 50, 1, 200);
     $offset = clamp_int($_GET['offset'] ?? 0, 0, 100000);
+    $afterId = isset($_GET['after']) ? clean_required_string($_GET['after'], 'after') : null;
+    if ($afterId !== null) {
+        validate_id($afterId);
+        $cursor = get_chat_message($pdo, $threadId, $afterId);
+        if ($cursor === null) {
+            error_response(400, 'after message not found in chat thread');
+        }
+        $statement = $pdo->prepare(
+            'SELECT * FROM chat_messages
+             WHERE thread_id = :thread_id
+               AND (created_at > :created_at OR (created_at = :created_at AND id > :after_id))
+             ORDER BY created_at ASC, id ASC
+             LIMIT :limit'
+        );
+        $statement->bindValue('thread_id', $threadId, PDO::PARAM_STR);
+        $statement->bindValue('created_at', db_datetime_from_api($cursor['created_at']), PDO::PARAM_STR);
+        $statement->bindValue('after_id', $afterId, PDO::PARAM_STR);
+        $statement->bindValue('limit', $limit, PDO::PARAM_INT);
+        $statement->execute();
+        return array_map('row_to_chat_message', $statement->fetchAll());
+    }
     $statement = $pdo->prepare(
         'SELECT * FROM chat_messages
          WHERE thread_id = :thread_id
@@ -745,9 +774,9 @@ function create_chat_message(PDO $pdo, string $threadId, array $payload): array
     try {
         $statement = $pdo->prepare(
             'INSERT INTO chat_messages
-                (id, thread_id, role, text, source, external_message_id, memory_id, metadata_json, observed_at, created_at)
+                (id, thread_id, role, text, source, external_message_id, memory_id, queue_status, claim_token, claimed_at, completed_at, metadata_json, observed_at, created_at)
              VALUES
-                (:id, :thread_id, :role, :text, :source, :external_message_id, :memory_id, :metadata_json, :observed_at, :created_at)'
+                (:id, :thread_id, :role, :text, :source, :external_message_id, :memory_id, :queue_status, :claim_token, :claimed_at, :completed_at, :metadata_json, :observed_at, :created_at)'
         );
         $statement->execute([
             'id' => $id,
@@ -757,6 +786,10 @@ function create_chat_message(PDO $pdo, string $threadId, array $payload): array
             'source' => $source,
             'external_message_id' => $externalMessageId,
             'memory_id' => $memoryId,
+            'queue_status' => 'stored',
+            'claim_token' => null,
+            'claimed_at' => null,
+            'completed_at' => null,
             'metadata_json' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
             'observed_at' => $observedAt,
             'created_at' => $now,
@@ -789,6 +822,120 @@ function get_chat_message(PDO $pdo, string $threadId, string $messageId): ?array
     $statement->execute(['id' => $messageId, 'thread_id' => $threadId]);
     $row = $statement->fetch();
     return $row === false ? null : row_to_chat_message($row);
+}
+
+function claim_bridge_messages(PDO $pdo, array $config, array $payload): array
+{
+    $limit = clamp_int($payload['limit'] ?? 10, 1, 50);
+    $timeout = max(60, min(3600, (int)($config['bridge']['claim_timeout_seconds'] ?? 900)));
+    $claimToken = bin2hex(random_bytes(32));
+    $expiredBefore = gmdate('Y-m-d H:i:s', time() - $timeout);
+    $now = utc_now();
+
+    $pdo->beginTransaction();
+    try {
+        $release = $pdo->prepare(
+            "UPDATE chat_messages
+             SET queue_status = 'pending', claim_token = NULL, claimed_at = NULL
+             WHERE queue_status = 'claimed' AND claimed_at < :expired_before"
+        );
+        $release->execute(['expired_before' => $expiredBefore]);
+
+        $select = $pdo->prepare(
+            "SELECT id FROM chat_messages
+             WHERE queue_status = 'pending'
+             ORDER BY created_at ASC, id ASC
+             LIMIT :limit
+             FOR UPDATE SKIP LOCKED"
+        );
+        $select->bindValue('limit', $limit, PDO::PARAM_INT);
+        $select->execute();
+        $ids = array_map(static fn(array $row): string => (string)$row['id'], $select->fetchAll());
+
+        if ($ids !== []) {
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $update = $pdo->prepare(
+                "UPDATE chat_messages
+                 SET queue_status = 'claimed', claim_token = ?, claimed_at = ?
+                 WHERE id IN (" . $placeholders . ")"
+            );
+            $update->execute(array_merge([$claimToken, $now], $ids));
+        }
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+
+    $messages = [];
+    foreach ($ids as $id) {
+        $messages[] = get_chat_message_or_fail($pdo, $id);
+    }
+    return [
+        'claim_token' => $ids === [] ? null : $claimToken,
+        'claim_timeout_seconds' => $timeout,
+        'messages' => $messages,
+    ];
+}
+
+function reply_to_bridge_message(PDO $pdo, string $messageId, array $payload): array
+{
+    $claimToken = clean_limited_string($payload['claim_token'] ?? null, 'claim_token', 64);
+    $text = clean_required_string($payload['text'] ?? null, 'text');
+
+    $pdo->beginTransaction();
+    try {
+        $select = $pdo->prepare('SELECT * FROM chat_messages WHERE id = :id FOR UPDATE');
+        $select->execute(['id' => $messageId]);
+        $requestRow = $select->fetch();
+        if ($requestRow === false) {
+            $pdo->rollBack();
+            error_response(404, 'bridge message not found');
+        }
+        if (!hash_equals((string)($requestRow['claim_token'] ?? ''), $claimToken)) {
+            $pdo->rollBack();
+            error_response(409, 'bridge claim is missing, stale, or invalid');
+        }
+
+        $existing = $pdo->prepare(
+            "SELECT * FROM chat_messages
+             WHERE source = 'bridge' AND external_message_id = :message_id"
+        );
+        $existing->execute(['message_id' => $messageId]);
+        $existingRow = $existing->fetch();
+        if ($existingRow !== false) {
+            $pdo->commit();
+            return ['request' => row_to_chat_message($requestRow), 'message' => row_to_chat_message($existingRow)];
+        }
+        if ((string)$requestRow['queue_status'] !== 'claimed') {
+            $pdo->rollBack();
+            error_response(409, 'bridge message is not claimed');
+        }
+
+        $message = create_chat_message($pdo, (string)$requestRow['thread_id'], [
+            'role' => 'paw',
+            'text' => $text,
+            'source' => 'bridge',
+            'external_message_id' => $messageId,
+            'metadata' => ['in_reply_to' => $messageId],
+        ]);
+        $complete = $pdo->prepare(
+            "UPDATE chat_messages
+             SET queue_status = 'completed', completed_at = :completed_at
+             WHERE id = :id"
+        );
+        $complete->execute(['id' => $messageId, 'completed_at' => utc_now()]);
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+
+    return ['request' => get_chat_message_or_fail($pdo, $messageId), 'message' => $message];
 }
 
 function create_memory_from_chat_message(PDO $pdo, array $config, string $threadId, string $messageId, array $payload): array
@@ -942,6 +1089,9 @@ function row_to_chat_message(array $row): array
         'source' => (string)$row['source'],
         'external_message_id' => $row['external_message_id'] === null ? null : (string)$row['external_message_id'],
         'memory_id' => $row['memory_id'] === null ? null : (string)$row['memory_id'],
+        'queue_status' => (string)($row['queue_status'] ?? 'stored'),
+        'claimed_at' => empty($row['claimed_at']) ? null : db_datetime_to_api((string)$row['claimed_at']),
+        'completed_at' => empty($row['completed_at']) ? null : db_datetime_to_api((string)$row['completed_at']),
         'metadata' => is_array($metadata) && !array_is_list($metadata) ? $metadata : new stdClass(),
         'observed_at' => db_datetime_to_api((string)$row['observed_at']),
         'created_at' => db_datetime_to_api((string)$row['created_at']),

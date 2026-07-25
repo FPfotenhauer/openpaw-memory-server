@@ -1,6 +1,9 @@
 .idea/
 openpaw-memory-server-2026-06-27/
 private/config.php
+tools/bridge-client/.env
+__pycache__/
+*.pyc
 private/config.local.php
 private/installed.lock
 private/backups/

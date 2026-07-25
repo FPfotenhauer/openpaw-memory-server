@@ -9,6 +9,7 @@ vorbereitet.
 - `/install`: einmaliger Web-Installer, nur solange keine Config existiert.
 - `/login`: Login für den privaten Webbereich.
 - `/chat`: geschützter Chatbereich mit Threadliste und Nachrichtenverlauf.
+- `/chat/messages`: session-geschützter JSON-Endpunkt zum Browser-Polling.
 - `/update`: geschützte Browser-Routine für Datenbankmigrationen.
 - `/api/health`: API-Health-Check.
 - `/api/memories`: Memory-API.

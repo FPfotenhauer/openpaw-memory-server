@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     source VARCHAR(128) NOT NULL DEFAULT 'web',
     external_message_id VARCHAR(255) NULL,
     memory_id VARCHAR(128) NULL,
+    queue_status VARCHAR(32) NOT NULL DEFAULT 'stored',
+    claim_token VARCHAR(64) NULL,
+    claimed_at DATETIME NULL,
+    completed_at DATETIME NULL,
     metadata_json LONGTEXT NOT NULL,
     observed_at DATETIME NOT NULL,
     created_at DATETIME NOT NULL,
@@ -56,6 +60,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     KEY idx_chat_messages_role (role),
     KEY idx_chat_messages_source (source),
     KEY idx_chat_messages_memory_id (memory_id),
+    KEY idx_chat_messages_queue (queue_status, claimed_at, created_at),
     UNIQUE KEY uq_chat_messages_external (source, external_message_id),
     FULLTEXT KEY ft_chat_messages_text (text),
     CONSTRAINT fk_chat_messages_thread

@@ -33,6 +33,10 @@ return [
         'runtime_dir' => __DIR__ . '/runtime',
     ],
 
+    'bridge' => [
+        'claim_timeout_seconds' => 900,
+    ],
+
     'security' => [
         'csp_enabled' => true,
         'hsts_enabled' => false,

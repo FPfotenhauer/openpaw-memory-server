@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenPaw local chat bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/openpaw-memory-server
+EnvironmentFile=/path/to/openpaw-memory-server/tools/bridge-client/.env
+ExecStart=/usr/bin/python3 /path/to/openpaw-memory-server/tools/bridge-client/openpaw_bridge_client.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

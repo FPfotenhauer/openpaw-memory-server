@@ -286,6 +286,50 @@ Wichtige Felder:
 - Erlaubte Rollen: `frank`, `paw`, `system`, `external`.
 - Erlaubte Thread-Statuswerte: `open`, `archived`.
 
+## Pull-Bridge
+
+Die Bridge verwendet dieselbe Bearer-Token-Authentifizierung wie die übrige
+API. Es werden keine eingehenden Verbindungen zum lokalen Agenten benötigt.
+Nachrichten, die Frank im Web-Chat sendet, werden mit Status `pending`
+gespeichert.
+
+Pending Nachrichten atomar claimen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":10}' \
+  "${API_BASE_URL}/bridge/messages/claim"
+```
+
+Die Antwort enthält ein kurzlebiges `claim_token` und die geclaimten
+Nachrichten. Ohne Antwort werden Claims standardmäßig nach 900 Sekunden wieder
+freigegeben. Der Wert kann über `bridge.claim_timeout_seconds` konfiguriert
+werden.
+
+Antwort zurückschreiben:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"claim_token":"<claim-token>","text":"Antwort von Paw"}' \
+  "${API_BASE_URL}/bridge/messages/<message-id>/reply"
+```
+
+Die Antwort wird als normale `paw`-Nachricht im ursprünglichen Thread
+gespeichert. Wiederholte Reply-Requests erzeugen keine doppelte Antwort.
+
+Browser-Polling mit Website-Session:
+
+```text
+GET /chat/messages?thread=<thread-id>&after=<last-message-id>
+```
+
+Alternativ unterstützt auch
+`GET /api/chats/<id>/messages?after=<last-message-id>` denselben Cursor.
+
 ## Backup erstellen
 
 Backups sind standardmäßig deaktiviert. Wenn sie in der Config aktiviert sind,

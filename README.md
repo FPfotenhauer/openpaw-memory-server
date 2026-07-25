@@ -18,7 +18,10 @@ dieselbe API nutzen.
 
 Die Website stellt Startseite, Login und einen geschützten Chatbereich bereit.
 Der Chat speichert Threads und Nachrichten serverseitig, ohne den API-Token an
-den Browser auszugeben. Chatnachrichten und Memory-Einträge bleiben getrennt,
+den Browser auszugeben. Web-Nachrichten können von einem lokalen Agenten über
+authentifizierte Pull-Bridge-Endpunkte geclaimt und beantwortet werden, ohne
+eingehende Ports am lokalen System zu öffnen. Chatnachrichten und
+Memory-Einträge bleiben getrennt,
 können aber über Referenzen verbunden werden. Mehrere globale Memories können
 über `chat_thread_memories` einem Thread zugeordnet werden. Die API speichert
 Erinnerungen mit Text, Tags, Metadaten, Art, Wichtigkeit, Scope, Quelle,
@@ -72,6 +75,9 @@ Alle Endpunkte benötigen:
 ```http
 Authorization: Bearer <token>
 ```
+
+Der lokale Pull-Client für Paw/OpenClaw liegt unter `tools/bridge-client/`.
+Setup und Betrieb sind in `tools/bridge-client/README.md` beschrieben.
 
 Für Beispiele:
 

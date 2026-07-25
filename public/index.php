@@ -27,6 +27,10 @@ function main(): void
         require_login();
         handle_chat($config);
     }
+    if ($method === 'GET' && $path === '/chat/messages') {
+        require_login();
+        handle_chat_messages($config);
+    }
     if ($method === 'POST' && $path === '/update') {
         require_login();
         handle_update($config);
@@ -237,6 +241,33 @@ function handle_chat(array $config): never
         chat_flash('Fehler: ' . $exception->getMessage());
         redirect('/chat');
     }
+}
+
+function handle_chat_messages(array $config): never
+{
+    try {
+        $pdo = connect_site_db($config);
+        $threadId = clean_site_id((string)($_GET['thread'] ?? ''));
+        $afterId = isset($_GET['after']) ? clean_site_id((string)$_GET['after']) : null;
+        if (site_get_chat_thread($pdo, $threadId) === null) {
+            site_json_response(404, ['error' => 'Thread nicht gefunden.']);
+        }
+        site_json_response(200, ['messages' => site_list_chat_messages($pdo, $threadId, 200, $afterId)]);
+    } catch (InvalidArgumentException $exception) {
+        site_json_response(400, ['error' => $exception->getMessage()]);
+    } catch (Throwable $exception) {
+        site_json_response(500, ['error' => 'Nachrichten konnten nicht geladen werden.']);
+    }
+}
+
+function site_json_response(int $status, array $payload): never
+{
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+    header('X-Content-Type-Options: nosniff');
+    header('Cache-Control: no-store');
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    exit;
 }
 
 function handle_update(array $config): never
@@ -831,8 +862,27 @@ function site_delete_chat_thread(PDO $pdo, string $threadId): bool
     return $statement->rowCount() > 0;
 }
 
-function site_list_chat_messages(PDO $pdo, string $threadId, int $limit): array
+function site_list_chat_messages(PDO $pdo, string $threadId, int $limit, ?string $afterId = null): array
 {
+    if ($afterId !== null) {
+        $cursor = site_get_chat_message($pdo, $threadId, $afterId);
+        if ($cursor === null) {
+            throw new InvalidArgumentException('Cursor-Nachricht nicht gefunden.');
+        }
+        $statement = $pdo->prepare(
+            'SELECT * FROM chat_messages
+             WHERE thread_id = :thread_id
+               AND (created_at > :created_at OR (created_at = :created_at AND id > :after_id))
+             ORDER BY created_at ASC, id ASC
+             LIMIT :limit'
+        );
+        $statement->bindValue('thread_id', $threadId, PDO::PARAM_STR);
+        $statement->bindValue('created_at', site_db_datetime_from_api((string)$cursor['created_at']), PDO::PARAM_STR);
+        $statement->bindValue('after_id', $afterId, PDO::PARAM_STR);
+        $statement->bindValue('limit', $limit, PDO::PARAM_INT);
+        $statement->execute();
+        return array_map('site_row_to_chat_message', $statement->fetchAll());
+    }
     $statement = $pdo->prepare(
         'SELECT * FROM chat_messages
          WHERE thread_id = :thread_id
@@ -851,11 +901,12 @@ function site_create_chat_message(PDO $pdo, string $threadId, string $role, stri
         throw new InvalidArgumentException('Thread nicht gefunden.');
     }
     $now = gmdate('Y-m-d H:i:s');
+    $queueStatus = $role === 'frank' && $source === 'web' ? 'pending' : 'stored';
     $statement = $pdo->prepare(
         'INSERT INTO chat_messages
-            (id, thread_id, role, text, source, external_message_id, memory_id, metadata_json, observed_at, created_at)
+            (id, thread_id, role, text, source, external_message_id, memory_id, queue_status, claim_token, claimed_at, completed_at, metadata_json, observed_at, created_at)
          VALUES
-            (:id, :thread_id, :role, :text, :source, :external_message_id, :memory_id, :metadata_json, :observed_at, :created_at)'
+            (:id, :thread_id, :role, :text, :source, :external_message_id, :memory_id, :queue_status, :claim_token, :claimed_at, :completed_at, :metadata_json, :observed_at, :created_at)'
     );
     $statement->execute([
         'id' => bin2hex(random_bytes(16)),
@@ -865,6 +916,10 @@ function site_create_chat_message(PDO $pdo, string $threadId, string $role, stri
         'source' => $source,
         'external_message_id' => null,
         'memory_id' => null,
+        'queue_status' => $queueStatus,
+        'claim_token' => null,
+        'claimed_at' => null,
+        'completed_at' => null,
         'metadata_json' => '{}',
         'observed_at' => $now,
         'created_at' => $now,
@@ -1027,6 +1082,7 @@ function site_row_to_chat_message(array $row): array
         'source' => (string)$row['source'],
         'external_message_id' => $row['external_message_id'] === null ? null : (string)$row['external_message_id'],
         'memory_id' => $row['memory_id'] === null ? null : (string)$row['memory_id'],
+        'queue_status' => (string)($row['queue_status'] ?? 'stored'),
         'metadata' => is_array($metadata) && !array_is_list($metadata) ? $metadata : [],
         'observed_at' => site_db_datetime_to_api((string)$row['observed_at']),
         'created_at' => site_db_datetime_to_api((string)$row['created_at']),
