@@ -1,14 +1,14 @@
 :root {
     color-scheme: dark;
     --bg: #0e0b07;
-    --panel: #15110c;
-    --panel-soft: #1b160f;
-    --panel-strong: #211a12;
-    --line: #2e2519;
-    --line-soft: #241d14;
+    --panel: #18120c;
+    --panel-soft: #21180f;
+    --panel-strong: #2b1f13;
+    --line: #59422c;
+    --line-soft: #40301f;
     --text: #f7efe4;
-    --muted: #9d8f7e;
-    --faint: #6e6254;
+    --muted: #c1b09d;
+    --faint: #958472;
     --accent: #ff9f2f;
     --accent-strong: #ffb65f;
     --green: #55d36f;
@@ -499,6 +499,7 @@ p {
     border: 1px solid var(--line);
     border-radius: 28px;
     background: rgba(18, 14, 9, 0.95);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38), inset 0 0 0 1px rgba(255, 159, 47, 0.025);
     overflow: hidden;
 }
 
@@ -507,8 +508,8 @@ p {
     flex-direction: column;
     gap: 16px;
     padding: 18px 18px 66px;
-    border-right: 1px solid var(--line-soft);
-    background: #100d09;
+    border-right: 1px solid var(--line);
+    background: #14100b;
 }
 
 .chat-new {
@@ -536,6 +537,10 @@ p {
     text-decoration: none;
 }
 
+.chat-list a {
+    border: 1px solid transparent;
+}
+
 .chat-list a strong {
     color: inherit;
     font-size: 0.78rem;
@@ -552,6 +557,7 @@ p {
 
 .chat-list a.active,
 .chat-list a:hover {
+    border-color: var(--line);
     background: var(--panel-strong);
     color: var(--text);
 }
@@ -642,7 +648,7 @@ p {
 
 .chat-message pre {
     margin: 0;
-    border: 1px solid var(--line-soft);
+    border: 1px solid var(--line);
     border-radius: 14px;
     padding: 12px 14px;
     background: #0c0a07;
@@ -655,7 +661,7 @@ p {
 }
 
 .chat-message.frank pre {
-    border-color: rgba(255, 159, 47, 0.32);
+    border-color: rgba(255, 159, 47, 0.58);
     background: var(--panel-strong);
 }
 
@@ -666,8 +672,8 @@ p {
 .chat-thread-memories {
     display: grid;
     gap: 8px;
-    border-top: 1px solid var(--line-soft);
-    border-bottom: 1px solid var(--line-soft);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
     padding: 12px 0;
 }
 
@@ -709,7 +715,7 @@ p {
 .chat-memory-form input {
     min-width: 0;
     min-height: 36px;
-    border: 1px solid var(--line-soft);
+    border: 1px solid var(--line);
     border-radius: 10px;
     padding: 0 10px;
     background: #0c0a07;
@@ -832,7 +838,7 @@ p {
 .chat-search-form input,
 .chat-thread-tools input[type="text"],
 .chat-compose select {
-    border: 1px solid var(--line-soft);
+    border: 1px solid var(--line);
     border-radius: 10px;
     background: #0c0a07;
 }
