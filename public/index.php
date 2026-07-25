@@ -213,10 +213,10 @@ function handle_chat(array $config): never
             redirect('/chat');
         }
 
-        if ($action === 'save_message_memory') {
+        if ($action === 'save_thread_memory') {
             $threadId = clean_site_id((string)($_POST['thread_id'] ?? ''));
-            $messageId = clean_site_id((string)($_POST['message_id'] ?? ''));
-            $memory = site_create_memory_from_chat_message($pdo, $config, $threadId, $messageId);
+            $text = clean_site_string((string)($_POST['memory'] ?? ''), 8000);
+            $memory = site_create_chat_thread_memory($pdo, $config, $threadId, $text);
             chat_flash('Memory gespeichert: ' . $memory['id']);
             redirect('/chat?thread=' . rawurlencode($threadId));
         }
@@ -327,6 +327,7 @@ function render_home(bool $loggedIn): string
 {
     $launchHref = $loggedIn ? 'chat' : 'login';
     $launchLabel = $loggedIn ? 'launch chat' : 'launch';
+    $version = escape(site_asset_version());
 
     return <<<HTML
 <main class="op-page op-landing">
@@ -335,6 +336,7 @@ function render_home(bool $loggedIn): string
             <a class="op-brand" href=".">
                 <img class="mascot-icon" src="assets/openpaw-icon.svg" alt="" width="32" height="32">
                 <span>open<span>paw</span></span>
+                <small class="op-version">v{$version}</small>
             </a>
             <div class="op-topnav">
                 <span class="op-status"><span></span>online</span>
@@ -381,6 +383,7 @@ HTML;
 function render_login(): string
 {
     $csrf = escape(csrf_token());
+    $version = escape(site_asset_version());
     $error = '';
     if (isset($_SESSION['openpaw_login_error'])) {
         $message = escape((string)$_SESSION['openpaw_login_error']);
@@ -394,6 +397,7 @@ function render_login(): string
         <a class="op-brand auth-brand" href=".">
             <img class="mascot-icon" src="assets/openpaw-icon.svg" alt="" width="32" height="32">
             <span>open<span>paw</span></span>
+            <small class="op-version">v{$version}</small>
         </a>
         <h1>login</h1>
         {$error}
@@ -416,6 +420,7 @@ function render_chat(array $config): string
 {
     $csrf = escape(csrf_token());
     $flash = render_chat_flash();
+    $version = escape(site_asset_version());
 
     try {
         $pdo = connect_site_db($config);
@@ -446,6 +451,7 @@ function render_chat(array $config): string
             <a class="op-brand" href=".">
                 <img class="mascot-icon" src="assets/openpaw-icon.svg" alt="" width="32" height="32">
                 <span>open<span>paw</span></span>
+                <small class="op-version">v{$version}</small>
             </a>
         </aside>
         <section class="chat-main">
@@ -463,7 +469,7 @@ HTML;
     }
 
     $threadList = render_chat_thread_list($threads, $selectedId);
-    $messageList = render_chat_message_list($csrf, $messages);
+    $messageList = render_chat_message_list($messages);
     $searchQuery = escape($query ?? '');
     $selectedTitle = escape((string)($selected['title'] ?? 'No chat selected'));
     $selectedMeta = $selected === null
@@ -472,7 +478,7 @@ HTML;
     $threadIdInput = $selectedId === null ? '' : '<input name="thread_id" type="hidden" value="' . escape($selectedId) . '">';
     $disabled = $selectedId === null ? ' disabled' : '';
     $threadTools = $selected === null ? '' : render_chat_thread_tools($csrf, $selected);
-    $threadMemoryList = $selected === null ? '' : render_chat_thread_memories($threadMemories);
+    $threadMemoryList = $selected === null ? '' : render_chat_thread_memories($csrf, $selectedId, $threadMemories);
 
     return <<<HTML
 <main class="op-chat-page">
@@ -481,6 +487,7 @@ HTML;
             <a class="op-brand" href=".">
                 <img class="mascot-icon" src="assets/openpaw-icon.svg" alt="" width="32" height="32">
                 <span>open<span>paw</span></span>
+                <small class="op-version">v{$version}</small>
             </a>
             <form class="chat-new-form" method="post" action="chat">
                 <input name="csrf" type="hidden" value="{$csrf}">
@@ -501,7 +508,13 @@ HTML;
                     <h1>{$selectedTitle}</h1>
                     <p class="chat-subtitle">{$selectedMeta}</p>
                 </div>
-                <span class="op-status"><span></span>online</span>
+                <div class="chat-head-actions">
+                    <span class="op-status"><span></span>online</span>
+                    <button class="op-theme-toggle" type="button" aria-pressed="false">
+                        <span data-theme-label="dark">dark</span>
+                        <span data-theme-label="light">light</span>
+                    </button>
+                </div>
             </header>
             {$flash}
             {$threadTools}
@@ -868,18 +881,8 @@ function site_get_chat_message(PDO $pdo, string $threadId, string $messageId): ?
     return $row === false ? null : site_row_to_chat_message($row);
 }
 
-function site_create_memory_from_chat_message(PDO $pdo, array $config, string $threadId, string $messageId): array
+function site_create_chat_thread_memory(PDO $pdo, array $config, string $threadId, string $text): array
 {
-    $message = site_get_chat_message($pdo, $threadId, $messageId);
-    if ($message === null) {
-        throw new InvalidArgumentException('Nachricht nicht gefunden.');
-    }
-    if ($message['memory_id'] !== null) {
-        $memory = site_get_memory($pdo, (string)$message['memory_id']);
-        if ($memory !== null) {
-            return $memory;
-        }
-    }
     $thread = site_get_chat_thread($pdo, $threadId);
     if ($thread === null) {
         throw new InvalidArgumentException('Thread nicht gefunden.');
@@ -888,27 +891,31 @@ function site_create_memory_from_chat_message(PDO $pdo, array $config, string $t
     $pdo->beginTransaction();
     try {
         $memory = site_create_memory($pdo, $config, [
-            'text' => $message['text'],
-            'tags' => ['chat', (string)$message['role']],
+            'text' => $text,
+            'tags' => ['chat', 'thread'],
             'metadata' => [
-                'origin' => 'chat',
+                'origin' => 'chat_thread',
                 'chat_thread_id' => $threadId,
                 'chat_thread_title' => $thread['title'],
-                'chat_message_id' => $messageId,
-                'chat_role' => $message['role'],
-                'chat_source' => $message['source'],
             ],
             'kind' => 'note',
             'importance' => 0.5,
             'scope' => 'personal',
             'source' => 'openpaw',
-            'source_ref' => 'chat:' . $threadId . ':' . $messageId,
+            'source_ref' => 'chat:' . $threadId,
             'confidence' => 1.0,
             'visibility' => 'private',
-            'observed_at' => $message['observed_at'],
+            'observed_at' => gmdate('Y-m-d H:i:s'),
         ]);
-        $statement = $pdo->prepare('UPDATE chat_messages SET memory_id = :memory_id WHERE id = :id');
-        $statement->execute(['id' => $messageId, 'memory_id' => $memory['id']]);
+        $statement = $pdo->prepare(
+            'INSERT INTO chat_thread_memories (thread_id, memory_id, created_at)
+             VALUES (:thread_id, :memory_id, :created_at)'
+        );
+        $statement->execute([
+            'thread_id' => $threadId,
+            'memory_id' => $memory['id'],
+            'created_at' => gmdate('Y-m-d H:i:s'),
+        ]);
         $pdo->commit();
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) {
@@ -974,11 +981,11 @@ function site_list_chat_thread_memories(PDO $pdo, string $threadId, int $limit):
 {
     $limit = max(1, min(50, $limit));
     $statement = $pdo->prepare(
-        'SELECT m.id, m.text, cm.id AS chat_message_id, cm.role, cm.observed_at
-         FROM chat_messages cm
-         INNER JOIN memories m ON m.id = cm.memory_id
-         WHERE cm.thread_id = :thread_id
-         ORDER BY cm.observed_at DESC, cm.created_at DESC
+        'SELECT m.id, m.text, m.observed_at
+         FROM chat_thread_memories ctm
+         INNER JOIN memories m ON m.id = ctm.memory_id
+         WHERE ctm.thread_id = :thread_id
+         ORDER BY ctm.created_at DESC
          LIMIT ' . $limit
     );
     $statement->execute(['thread_id' => $threadId]);
@@ -987,8 +994,6 @@ function site_list_chat_thread_memories(PDO $pdo, string $threadId, int $limit):
         $rows[] = [
             'id' => (string)$row['id'],
             'text' => (string)$row['text'],
-            'chat_message_id' => (string)$row['chat_message_id'],
-            'role' => (string)$row['role'],
             'observed_at' => site_db_datetime_to_api((string)$row['observed_at']),
         ];
     }
@@ -1079,23 +1084,26 @@ function render_chat_thread_tools(string $csrf, array $thread): string
 HTML;
 }
 
-function render_chat_thread_memories(array $memories): string
+function render_chat_thread_memories(string $csrf, string $threadId, array $memories): string
 {
-    if ($memories === []) {
-        return '<section class="chat-thread-memories"><span>thread memories</span><p>No saved memories in this thread.</p></section>';
-    }
     $items = '';
     foreach ($memories as $memory) {
         $id = escape((string)$memory['id']);
-        $role = escape((string)$memory['role']);
         $time = escape((string)$memory['observed_at']);
         $text = escape(site_excerpt((string)$memory['text'], 180));
-        $items .= '<li><span>' . $role . ' / ' . $time . ' / ' . $id . '</span><p>' . $text . '</p></li>';
+        $items .= '<li><span>' . $time . ' / ' . $id . '</span><p>' . $text . '</p></li>';
     }
-    return '<section class="chat-thread-memories"><span>thread memories</span><ul>' . $items . '</ul></section>';
+    $history = $items === '' ? '<p>No saved memories in this thread.</p>' : '<ul>' . $items . '</ul>';
+    return '<section class="chat-thread-memories"><span>thread memories</span>'
+        . '<form class="chat-memory-form" method="post" action="chat">'
+        . '<input name="csrf" type="hidden" value="' . $csrf . '">'
+        . '<input name="chat_action" type="hidden" value="save_thread_memory">'
+        . '<input name="thread_id" type="hidden" value="' . escape($threadId) . '">'
+        . '<input name="memory" type="text" placeholder="Memory für diesen Thread..." maxlength="8000" required>'
+        . '<button type="submit">save memory</button></form>' . $history . '</section>';
 }
 
-function render_chat_message_list(string $csrf, array $messages): string
+function render_chat_message_list(array $messages): string
 {
     if ($messages === []) {
         return '<article class="chat-message system"><span>system</span><pre>No messages yet.</pre></article>';
@@ -1105,13 +1113,7 @@ function render_chat_message_list(string $csrf, array $messages): string
         $role = escape((string)$message['role']);
         $text = escape((string)$message['text']);
         $time = escape((string)$message['observed_at']);
-        $threadId = escape((string)$message['thread_id']);
-        $messageId = escape((string)$message['id']);
-        $memoryId = $message['memory_id'] === null ? null : escape((string)$message['memory_id']);
-        $memoryControl = $memoryId === null
-            ? '<form method="post" action="chat"><input name="csrf" type="hidden" value="' . $csrf . '"><input name="chat_action" type="hidden" value="save_message_memory"><input name="thread_id" type="hidden" value="' . $threadId . '"><input name="message_id" type="hidden" value="' . $messageId . '"><button type="submit">save memory</button></form>'
-            : '<span class="chat-memory-saved">saved ' . $memoryId . '</span>';
-        $html .= '<article class="chat-message ' . $role . '"><span>' . $role . ' / ' . $time . '</span><pre>' . $text . '</pre><div class="chat-message-actions">' . $memoryControl . '</div></article>';
+        $html .= '<article class="chat-message ' . $role . '"><span>' . $role . ' / ' . $time . '</span><pre>' . $text . '</pre></article>';
     }
     return $html;
 }
@@ -1268,6 +1270,16 @@ function render_page(string $title, string $body): never
 </html>
 HTML;
     exit;
+}
+
+function site_asset_version(): string
+{
+    $path = PROJECT_ROOT . '/VERSION';
+    if (!is_file($path)) {
+        return 'dev';
+    }
+    $version = trim((string)file_get_contents($path));
+    return $version === '' ? 'dev' : $version;
 }
 
 function redirect(string $path): never

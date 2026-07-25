@@ -130,6 +130,17 @@ p {
     color: var(--accent);
 }
 
+.op-version {
+    align-self: flex-end;
+    margin: 0 0 4px -5px;
+    color: var(--faint);
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.58rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 .op-topnav {
     display: flex;
     align-items: center;
@@ -221,12 +232,17 @@ p {
 :root[data-theme="light"] .chat-new-form input,
 :root[data-theme="light"] .chat-search-form input,
 :root[data-theme="light"] .chat-thread-tools input[type="text"],
+:root[data-theme="light"] .chat-memory-form input,
 :root[data-theme="light"] .chat-compose,
 :root[data-theme="light"] .chat-compose select,
 :root[data-theme="light"] .installer input:not([type="checkbox"]),
 :root[data-theme="light"] .installer pre,
 :root[data-theme="light"] .installer textarea {
     background: #fffaf2;
+}
+
+:root[data-theme="light"] .chat-sidebar {
+    background: var(--panel-soft);
 }
 
 :root[data-theme="light"] .op-topbar {
@@ -550,7 +566,24 @@ p {
 .chat-head {
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
     gap: 14px;
+}
+
+.chat-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.chat-head-actions .op-theme-toggle {
+    height: 34px;
+}
+
+.chat-head-actions .op-theme-toggle span {
+    min-width: 56px;
+    height: 32px;
+    font-size: 0.68rem;
 }
 
 .chat-head h1 {
@@ -665,6 +698,39 @@ p {
     font-size: 0.78rem;
     line-height: 1.45;
     overflow-wrap: anywhere;
+}
+
+.chat-memory-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+
+.chat-memory-form input {
+    min-width: 0;
+    min-height: 36px;
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    padding: 0 10px;
+    background: #0c0a07;
+    color: var(--text);
+}
+
+.chat-memory-form input:focus {
+    border-color: rgba(255, 159, 47, 0.7);
+    outline: 2px solid rgba(255, 159, 47, 0.14);
+    outline-offset: 1px;
+}
+
+.chat-memory-form button {
+    min-height: 36px;
+    border: 1px solid rgba(255, 159, 47, 0.45);
+    border-radius: 12px;
+    padding: 0 14px;
+    background: var(--accent);
+    color: #1b1005;
+    font-weight: 800;
+    cursor: pointer;
 }
 
 .chat-message-actions {

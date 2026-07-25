@@ -114,6 +114,19 @@ function main(): void
             }
         }
 
+        if (preg_match('#^/chats/([A-Za-z0-9._:-]+)/memories$#', $path, $matches) === 1) {
+            $threadId = $matches[1];
+            if ($method === 'GET') {
+                if (get_chat_thread($pdo, $threadId) === null) {
+                    error_response(404, 'chat thread not found');
+                }
+                json_response(200, ['memories' => list_chat_thread_memories($pdo, $threadId)]);
+            }
+            if ($method === 'POST') {
+                json_response(201, create_chat_thread_memory($pdo, $config, $threadId, read_json_body()));
+            }
+        }
+
         if (preg_match('#^/chats/([A-Za-z0-9._:-]+)/messages/([A-Za-z0-9._:-]+)/memory$#', $path, $matches) === 1) {
             if ($method === 'POST') {
                 $result = create_memory_from_chat_message($pdo, $config, $matches[1], $matches[2], read_json_body());
@@ -787,6 +800,7 @@ function create_memory_from_chat_message(PDO $pdo, array $config, string $thread
     if ($message['memory_id'] !== null) {
         $memory = get_memory($pdo, (string)$message['memory_id']);
         if ($memory !== null) {
+            link_chat_thread_memory($pdo, $threadId, $memory['id']);
             return ['memory' => $memory, 'message' => $message, 'created' => false];
         }
     }
@@ -822,6 +836,7 @@ function create_memory_from_chat_message(PDO $pdo, array $config, string $thread
     try {
         $memory = create_memory($pdo, $config, $memoryPayload);
         link_chat_message_memory($pdo, $messageId, $memory['id']);
+        link_chat_thread_memory($pdo, $threadId, $memory['id']);
         $updatedMessage = get_chat_message($pdo, $threadId, $messageId);
         $pdo->commit();
     } catch (Throwable $exception) {
@@ -832,6 +847,60 @@ function create_memory_from_chat_message(PDO $pdo, array $config, string $thread
     }
 
     return ['memory' => $memory, 'message' => $updatedMessage ?? $message, 'created' => true];
+}
+
+function list_chat_thread_memories(PDO $pdo, string $threadId): array
+{
+    $limit = clamp_int($_GET['limit'] ?? 50, 1, 100);
+    $statement = $pdo->prepare(
+        'SELECT m.* FROM chat_thread_memories ctm
+         INNER JOIN memories m ON m.id = ctm.memory_id
+         WHERE ctm.thread_id = :thread_id
+         ORDER BY ctm.created_at DESC
+         LIMIT :limit'
+    );
+    $statement->bindValue('thread_id', $threadId, PDO::PARAM_STR);
+    $statement->bindValue('limit', $limit, PDO::PARAM_INT);
+    $statement->execute();
+    return array_map('row_to_memory', $statement->fetchAll());
+}
+
+function create_chat_thread_memory(PDO $pdo, array $config, string $threadId, array $payload): array
+{
+    $thread = get_chat_thread($pdo, $threadId);
+    if ($thread === null) {
+        error_response(404, 'chat thread not found');
+    }
+    $metadata = parse_metadata($payload['metadata'] ?? []);
+    $metadata['origin'] = 'chat_thread';
+    $metadata['chat_thread_id'] = $threadId;
+    $metadata['chat_thread_title'] = $thread['title'];
+    $payload['metadata'] = $metadata;
+    $payload['tags'] ??= ['chat', 'thread'];
+    $payload['source'] ??= 'openpaw';
+    $payload['source_ref'] ??= 'chat:' . $threadId;
+
+    $pdo->beginTransaction();
+    try {
+        $memory = create_memory($pdo, $config, $payload);
+        link_chat_thread_memory($pdo, $threadId, $memory['id']);
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+    return $memory;
+}
+
+function link_chat_thread_memory(PDO $pdo, string $threadId, string $memoryId): void
+{
+    $statement = $pdo->prepare(
+        'INSERT IGNORE INTO chat_thread_memories (thread_id, memory_id, created_at)
+         VALUES (:thread_id, :memory_id, :created_at)'
+    );
+    $statement->execute(['thread_id' => $threadId, 'memory_id' => $memoryId, 'created_at' => utc_now()]);
 }
 
 function link_chat_message_memory(PDO $pdo, string $messageId, string $memoryId): void

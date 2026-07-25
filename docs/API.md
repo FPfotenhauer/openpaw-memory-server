@@ -245,7 +245,26 @@ curl -fsS \
   "${API_BASE_URL}/chats/<id>/messages?limit=50&offset=0"
 ```
 
-Nachricht als Memory speichern:
+Memory für einen Thread speichern:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Die wichtigste Erkenntnis dieses Threads."}' \
+  "${API_BASE_URL}/chats/<id>/memories"
+```
+
+Thread-Memories lesen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/<id>/memories"
+```
+
+Der folgende ältere Endpunkt bleibt zur Kompatibilität verfügbar und ordnet
+das erzeugte Memory ebenfalls dem Thread zu:
 
 ```bash
 curl -fsS \
@@ -255,10 +274,9 @@ curl -fsS \
   "${API_BASE_URL}/chats/<id>/messages/<message-id>/memory"
 ```
 
-Die API legt ein globales Memory an, setzt `chat_messages.memory_id` und
-speichert im Memory-Metadata den Ursprung mit `chat_thread_id` und
-`chat_message_id`. Wenn die Nachricht bereits verknüpft ist, wird das vorhandene
-Memory zurückgegeben.
+Der Kompatibilitätsendpunkt setzt weiterhin `chat_messages.memory_id`, ordnet
+das Memory aber zusätzlich über `chat_thread_memories` dem Thread zu. Wenn die
+Nachricht bereits verknüpft ist, wird das vorhandene Memory zurückgegeben.
 
 Wichtige Felder:
 
