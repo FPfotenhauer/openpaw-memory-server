@@ -162,7 +162,7 @@ def request_json(
     try:
         with urllib.request.urlopen(
             request,
-            timeout=settings.agent_timeout_seconds,
+            timeout=settings.request_timeout_seconds,
         ) as response:
             data = response.read()
             if response.status == 204 or data == b"":
@@ -300,7 +300,7 @@ def run_agent(settings: Settings, claim: ClaimedMessage) -> str:
             input=json.dumps(payload, ensure_ascii=False),
             text=True,
             capture_output=True,
-            timeout=settings.request_timeout_seconds,
+            timeout=settings.agent_timeout_seconds,
             check=False,
             shell=use_shell,
         )
