@@ -39,6 +39,14 @@ return [
         'claim_timeout_seconds' => 900,
     ],
 
+    'media' => [
+        'max_upload_bytes' => 10485760,
+        'max_width' => 8192,
+        'max_height' => 8192,
+        'max_pixels' => 40000000,
+        'max_attachments_per_memory' => 10,
+    ],
+
     'security' => [
         'csp_enabled' => true,
         'hsts_enabled' => false,

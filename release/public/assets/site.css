@@ -235,6 +235,7 @@ p {
 :root[data-theme="light"] .chat-memory-form input,
 :root[data-theme="light"] .chat-compose,
 :root[data-theme="light"] .chat-compose select,
+:root[data-theme="light"] .chat-compose textarea,
 :root[data-theme="light"] .installer input:not([type="checkbox"]),
 :root[data-theme="light"] .installer pre,
 :root[data-theme="light"] .installer textarea {
@@ -844,7 +845,7 @@ p {
 .chat-search-form input,
 .chat-thread-tools input[type="text"],
 .chat-compose select,
-.chat-compose input {
+.chat-compose textarea {
     min-width: 0;
     min-height: 36px;
     border: 0;
@@ -852,6 +853,16 @@ p {
     background: transparent;
     color: var(--text);
     font-size: 0.78rem;
+}
+
+.chat-compose textarea {
+    align-self: center;
+    max-height: 140px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    overflow-y: auto;
+    resize: none;
+    line-height: 1.45;
 }
 
 .chat-new-form input,
@@ -863,12 +874,12 @@ p {
     background: #0c0a07;
 }
 
-.chat-compose input::placeholder {
+.chat-compose textarea::placeholder {
     color: var(--faint);
 }
 
 .chat-compose button:disabled,
-.chat-compose input:disabled,
+.chat-compose textarea:disabled,
 .chat-compose select:disabled {
     cursor: not-allowed;
     opacity: 0.72;

@@ -53,6 +53,7 @@ Die erste Ausbaustufe bietet:
 - Hauptbereich mit Nachrichtenverlauf
 - automatisches Nachladen neuer Nachrichten per kurzem HTTP-Polling
 - Eingabeformular für neue Nachrichten
+- Enter zum Senden und Shift+Enter für Zeilenumbrüche
 - Rollenkennzeichnung für `frank`, `paw`, `system` und `external`
 - Speichern mehrerer globaler Memories direkt am Thread
 - editierbare, mit `chat`, `thread`, `openpaw` und einem normalisierten

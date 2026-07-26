@@ -40,6 +40,30 @@ function main(): void
             json_response(201, create_memory($pdo, $config, read_json_body()));
         }
 
+        if ($method === 'POST' && $path === '/media') {
+            $result = create_media_object($pdo, $config);
+            json_response(($result['created'] ?? false) === true ? 201 : 200, $result);
+        }
+
+        if (preg_match('#^/memories/([A-Za-z0-9._:-]+)/attachments$#', $path, $matches) === 1) {
+            $memoryId = $matches[1];
+            if ($method === 'GET') {
+                if (get_memory($pdo, $memoryId) === null) {
+                    error_response(404, 'memory not found');
+                }
+                json_response(200, ['attachments' => list_memory_attachments($pdo, $memoryId)]);
+            }
+            if ($method === 'POST') {
+                json_response(201, create_memory_attachment($pdo, $config, $memoryId, read_json_body()));
+            }
+        }
+
+        if ($method === 'GET'
+            && preg_match('#^/attachments/([A-Za-z0-9._:-]+)/content$#', $path, $matches) === 1
+        ) {
+            send_attachment_content($pdo, $matches[1]);
+        }
+
         if (preg_match('#^/memories/([A-Za-z0-9._:-]+)$#', $path, $matches) === 1) {
             $id = $matches[1];
             if ($method === 'GET') {
@@ -385,6 +409,298 @@ function get_memory_or_fail(PDO $pdo, string $id): array
     return $memory;
 }
 
+function create_media_object(PDO $pdo, array $config): array
+{
+    if (!isset($_FILES['image']) || !is_array($_FILES['image'])) {
+        throw new InvalidArgumentException('multipart field image is required');
+    }
+    $upload = $_FILES['image'];
+    $error = (int)($upload['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($error !== UPLOAD_ERR_OK) {
+        throw new InvalidArgumentException('image upload failed with code ' . $error);
+    }
+
+    $tmpPath = (string)($upload['tmp_name'] ?? '');
+    $byteSize = (int)($upload['size'] ?? 0);
+    $media = $config['media'] ?? [];
+    $maxBytes = max(1024, (int)($media['max_upload_bytes'] ?? 10485760));
+    if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
+        throw new InvalidArgumentException('invalid uploaded image');
+    }
+    if ($byteSize < 1 || $byteSize > $maxBytes) {
+        throw new InvalidArgumentException('image must be between 1 and ' . $maxBytes . ' bytes');
+    }
+    if (!class_exists('finfo') || !function_exists('getimagesize') || !function_exists('imagecreatefromstring')) {
+        throw new RuntimeException('image upload requires fileinfo and GD');
+    }
+
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mimeType = (string)$finfo->file($tmpPath);
+    $allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!in_array($mimeType, $allowed, true)) {
+        throw new InvalidArgumentException('image type must be JPEG, PNG, or WebP');
+    }
+    $dimensions = getimagesize($tmpPath);
+    if ($dimensions === false || !isset($dimensions[0], $dimensions[1], $dimensions['mime'])) {
+        throw new InvalidArgumentException('uploaded file is not a valid image');
+    }
+    if ((string)$dimensions['mime'] !== $mimeType) {
+        throw new InvalidArgumentException('image content type mismatch');
+    }
+
+    $width = (int)$dimensions[0];
+    $height = (int)$dimensions[1];
+    $maxWidth = max(1, (int)($media['max_width'] ?? 8192));
+    $maxHeight = max(1, (int)($media['max_height'] ?? 8192));
+    $maxPixels = max(1, (int)($media['max_pixels'] ?? 40000000));
+    if ($width < 1 || $height < 1 || $width > $maxWidth || $height > $maxHeight || $width * $height > $maxPixels) {
+        throw new InvalidArgumentException('image dimensions exceed configured limits');
+    }
+
+    $raw = file_get_contents($tmpPath);
+    if ($raw === false) {
+        throw new RuntimeException('uploaded image could not be read');
+    }
+    $image = @imagecreatefromstring($raw);
+    if ($image === false) {
+        throw new InvalidArgumentException('uploaded image could not be decoded');
+    }
+    $normalized = normalize_image_content($image, $mimeType);
+    imagedestroy($image);
+    if (strlen($normalized) > $maxBytes) {
+        throw new InvalidArgumentException('normalized image exceeds configured size limit');
+    }
+
+    $sha256 = hash('sha256', $normalized);
+    $existing = get_media_by_sha256($pdo, $sha256);
+    $created = false;
+    if ($existing === null) {
+        $id = bin2hex(random_bytes(16));
+        $statement = $pdo->prepare(
+            'INSERT INTO media_objects
+                (id, sha256, mime_type, byte_size, width, height, content, created_at)
+             VALUES
+                (:id, :sha256, :mime_type, :byte_size, :width, :height, :content, :created_at)'
+        );
+        $statement->bindValue('id', $id, PDO::PARAM_STR);
+        $statement->bindValue('sha256', $sha256, PDO::PARAM_STR);
+        $statement->bindValue('mime_type', $mimeType, PDO::PARAM_STR);
+        $statement->bindValue('byte_size', strlen($normalized), PDO::PARAM_INT);
+        $statement->bindValue('width', $width, PDO::PARAM_INT);
+        $statement->bindValue('height', $height, PDO::PARAM_INT);
+        $statement->bindValue('content', $normalized, PDO::PARAM_LOB);
+        $statement->bindValue('created_at', utc_now(), PDO::PARAM_STR);
+        $statement->execute();
+        $existing = get_media_or_fail($pdo, $id);
+        $created = true;
+    }
+
+    return [
+        'created' => $created,
+        'media' => $existing,
+        'original_filename' => sanitize_original_filename((string)($upload['name'] ?? '')),
+    ];
+}
+
+function normalize_image_content(GdImage $image, string $mimeType): string
+{
+    ob_start();
+    $success = match ($mimeType) {
+        'image/jpeg' => imagejpeg($image, null, 90),
+        'image/png' => imagepng($image, null, 6),
+        'image/webp' => function_exists('imagewebp') && imagewebp($image, null, 85),
+        default => false,
+    };
+    $content = ob_get_clean();
+    if (!$success || !is_string($content) || $content === '') {
+        throw new RuntimeException('image could not be normalized');
+    }
+    return $content;
+}
+
+function sanitize_original_filename(string $filename): ?string
+{
+    $filename = trim(basename(str_replace('\\', '/', $filename)));
+    $filename = preg_replace('/[\x00-\x1F\x7F]+/u', '', $filename) ?? '';
+    if ($filename === '') {
+        return null;
+    }
+    return function_exists('mb_substr') ? mb_substr($filename, 0, 255, 'UTF-8') : substr($filename, 0, 255);
+}
+
+function get_media_by_sha256(PDO $pdo, string $sha256): ?array
+{
+    $statement = $pdo->prepare(
+        'SELECT id, sha256, mime_type, byte_size, width, height, created_at
+         FROM media_objects WHERE sha256 = :sha256'
+    );
+    $statement->execute(['sha256' => $sha256]);
+    $row = $statement->fetch();
+    return $row === false ? null : row_to_media($row);
+}
+
+function get_media_or_fail(PDO $pdo, string $id): array
+{
+    $statement = $pdo->prepare(
+        'SELECT id, sha256, mime_type, byte_size, width, height, created_at
+         FROM media_objects WHERE id = :id'
+    );
+    $statement->execute(['id' => $id]);
+    $row = $statement->fetch();
+    if ($row === false) {
+        throw new RuntimeException('media object disappeared after write');
+    }
+    return row_to_media($row);
+}
+
+function row_to_media(array $row): array
+{
+    return [
+        'id' => (string)$row['id'],
+        'sha256' => (string)$row['sha256'],
+        'mime_type' => (string)$row['mime_type'],
+        'byte_size' => (int)$row['byte_size'],
+        'width' => (int)$row['width'],
+        'height' => (int)$row['height'],
+        'created_at' => db_datetime_to_api((string)$row['created_at']),
+    ];
+}
+
+function create_memory_attachment(PDO $pdo, array $config, string $memoryId, array $payload): array
+{
+    if (get_memory($pdo, $memoryId) === null) {
+        error_response(404, 'memory not found');
+    }
+    $mediaId = clean_required_string($payload['media_id'] ?? null, 'media_id');
+    validate_id($mediaId);
+    get_media_or_fail($pdo, $mediaId);
+    $maximum = max(1, (int)($config['media']['max_attachments_per_memory'] ?? 10));
+    $count = $pdo->prepare('SELECT COUNT(*) FROM memory_attachments WHERE memory_id = :memory_id');
+    $count->execute(['memory_id' => $memoryId]);
+    if ((int)$count->fetchColumn() >= $maximum) {
+        throw new InvalidArgumentException('memory attachment limit reached');
+    }
+
+    $role = clean_limited_string($payload['role'] ?? 'image', 'role', 32);
+    if (!in_array($role, ['image', 'screenshot', 'reference', 'document'], true)) {
+        throw new InvalidArgumentException('role must be one of: image, screenshot, reference, document');
+    }
+    $id = bin2hex(random_bytes(16));
+    $now = utc_now();
+    $statement = $pdo->prepare(
+        'INSERT INTO memory_attachments
+            (id, memory_id, media_id, role, caption, alt_text, ocr_text, source, source_ref,
+             original_filename, metadata_json, sort_order, observed_at, created_at)
+         VALUES
+            (:id, :memory_id, :media_id, :role, :caption, :alt_text, :ocr_text, :source, :source_ref,
+             :original_filename, :metadata_json, :sort_order, :observed_at, :created_at)'
+    );
+    $statement->execute([
+        'id' => $id,
+        'memory_id' => $memoryId,
+        'media_id' => $mediaId,
+        'role' => $role,
+        'caption' => parse_optional_string($payload['caption'] ?? null, 'caption', 1000),
+        'alt_text' => parse_optional_string($payload['alt_text'] ?? null, 'alt_text', 2000),
+        'ocr_text' => parse_optional_string($payload['ocr_text'] ?? null, 'ocr_text', 100000),
+        'source' => clean_limited_string($payload['source'] ?? 'api', 'source', 128),
+        'source_ref' => parse_optional_string($payload['source_ref'] ?? null, 'source_ref', 255),
+        'original_filename' => sanitize_original_filename((string)($payload['original_filename'] ?? '')),
+        'metadata_json' => json_encode(parse_metadata($payload['metadata'] ?? []), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        'sort_order' => clamp_int($payload['sort_order'] ?? 0, 0, 10000),
+        'observed_at' => parse_datetime($payload['observed_at'] ?? $now, 'observed_at'),
+        'created_at' => $now,
+    ]);
+    return get_memory_attachment_or_fail($pdo, $id);
+}
+
+function list_memory_attachments(PDO $pdo, string $memoryId): array
+{
+    $statement = $pdo->prepare(
+        'SELECT a.*, m.sha256, m.mime_type, m.byte_size, m.width, m.height
+         FROM memory_attachments a
+         INNER JOIN media_objects m ON m.id = a.media_id
+         WHERE a.memory_id = :memory_id
+         ORDER BY a.sort_order ASC, a.created_at ASC, a.id ASC'
+    );
+    $statement->execute(['memory_id' => $memoryId]);
+    return array_map('row_to_memory_attachment', $statement->fetchAll());
+}
+
+function get_memory_attachment_or_fail(PDO $pdo, string $id): array
+{
+    $statement = $pdo->prepare(
+        'SELECT a.*, m.sha256, m.mime_type, m.byte_size, m.width, m.height
+         FROM memory_attachments a
+         INNER JOIN media_objects m ON m.id = a.media_id
+         WHERE a.id = :id'
+    );
+    $statement->execute(['id' => $id]);
+    $row = $statement->fetch();
+    if ($row === false) {
+        throw new RuntimeException('memory attachment disappeared after write');
+    }
+    return row_to_memory_attachment($row);
+}
+
+function row_to_memory_attachment(array $row): array
+{
+    $metadata = json_decode((string)$row['metadata_json'], true);
+    return [
+        'id' => (string)$row['id'],
+        'memory_id' => (string)$row['memory_id'],
+        'media_id' => (string)$row['media_id'],
+        'role' => (string)$row['role'],
+        'caption' => $row['caption'] === null ? null : (string)$row['caption'],
+        'alt_text' => $row['alt_text'] === null ? null : (string)$row['alt_text'],
+        'ocr_text' => $row['ocr_text'] === null ? null : (string)$row['ocr_text'],
+        'source' => (string)$row['source'],
+        'source_ref' => $row['source_ref'] === null ? null : (string)$row['source_ref'],
+        'original_filename' => $row['original_filename'] === null ? null : (string)$row['original_filename'],
+        'metadata' => is_array($metadata) && !array_is_list($metadata) ? $metadata : new stdClass(),
+        'sort_order' => (int)$row['sort_order'],
+        'observed_at' => db_datetime_to_api((string)$row['observed_at']),
+        'created_at' => db_datetime_to_api((string)$row['created_at']),
+        'media' => [
+            'sha256' => (string)$row['sha256'],
+            'mime_type' => (string)$row['mime_type'],
+            'byte_size' => (int)$row['byte_size'],
+            'width' => (int)$row['width'],
+            'height' => (int)$row['height'],
+            'content_url' => '/api/attachments/' . rawurlencode((string)$row['id']) . '/content',
+        ],
+    ];
+}
+
+function send_attachment_content(PDO $pdo, string $id): never
+{
+    $statement = $pdo->prepare(
+        'SELECT a.original_filename, m.sha256, m.mime_type, m.byte_size, m.content
+         FROM memory_attachments a
+         INNER JOIN media_objects m ON m.id = a.media_id
+         WHERE a.id = :id'
+    );
+    $statement->execute(['id' => $id]);
+    $row = $statement->fetch();
+    if ($row === false) {
+        error_response(404, 'memory attachment not found');
+    }
+    $filename = sanitize_original_filename((string)($row['original_filename'] ?? '')) ?? ('image-' . $id);
+    $content = $row['content'];
+    if (is_resource($content)) {
+        $content = stream_get_contents($content);
+    }
+    if (!is_string($content)) {
+        throw new RuntimeException('memory attachment content could not be read');
+    }
+    header('Content-Type: ' . (string)$row['mime_type']);
+    header('Content-Length: ' . (int)$row['byte_size']);
+    header('Content-Disposition: inline; filename="' . addcslashes($filename, "\\\"") . '"');
+    header('ETag: "' . (string)$row['sha256'] . '"');
+    echo $content;
+    exit;
+}
+
 function list_memories(PDO $pdo): array
 {
     $limit = clamp_int($_GET['limit'] ?? 20, 1, 100);
@@ -521,9 +837,33 @@ function update_memory(PDO $pdo, array $config, string $id, array $payload): ?ar
 
 function delete_memory(PDO $pdo, string $id): bool
 {
-    $statement = $pdo->prepare('DELETE FROM memories WHERE id = :id');
-    $statement->execute(['id' => $id]);
-    return $statement->rowCount() > 0;
+    $media = $pdo->prepare('SELECT media_id FROM memory_attachments WHERE memory_id = :memory_id');
+    $media->execute(['memory_id' => $id]);
+    $mediaIds = array_map(static fn(array $row): string => (string)$row['media_id'], $media->fetchAll());
+
+    $pdo->beginTransaction();
+    try {
+        $statement = $pdo->prepare('DELETE FROM memories WHERE id = :id');
+        $statement->execute(['id' => $id]);
+        $deleted = $statement->rowCount() > 0;
+        if ($deleted) {
+            $cleanup = $pdo->prepare(
+                'DELETE FROM media_objects
+                 WHERE id = :id
+                   AND NOT EXISTS (SELECT 1 FROM memory_attachments WHERE media_id = :referenced_id)'
+            );
+            foreach (array_unique($mediaIds) as $mediaId) {
+                $cleanup->execute(['id' => $mediaId, 'referenced_id' => $mediaId]);
+            }
+        }
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+    return $deleted;
 }
 
 function row_to_memory(array $row): array

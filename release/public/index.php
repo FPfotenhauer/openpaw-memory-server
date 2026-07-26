@@ -610,7 +610,7 @@ HTML;
                     <option value="system">System</option>
                     <option value="external">External</option>
                 </select>
-                <input type="text" name="message" placeholder="Neue Nachricht oder Notiz..." autocomplete="off" maxlength="8000" required{$disabled}>
+                <textarea name="message" placeholder="Neue Nachricht oder Notiz..." autocomplete="off" maxlength="8000" rows="1" required{$disabled}></textarea>
                 <button type="submit"{$disabled}>send</button>
             </form>
         </section>

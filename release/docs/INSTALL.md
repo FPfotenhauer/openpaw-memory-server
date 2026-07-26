@@ -49,6 +49,8 @@ Vor dem Upload prüfen oder im Webspace-Kundenbereich nachsehen:
 
 - PHP 8.1 oder neuer ist verfügbar.
 - Die PHP-Erweiterung `pdo_mysql` ist aktiv.
+- Für Bild-Memories sind `fileinfo` und GD mit JPEG-, PNG- und
+  WebP-Unterstützung aktiv.
 - Eine MariaDB-Datenbank kann angelegt werden.
 - `.htaccess` und Rewrite-Regeln werden unterstützt.
 - Der öffentliche Webroot kann idealerweise auf den Ordner `public/` zeigen.

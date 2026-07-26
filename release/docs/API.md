@@ -330,6 +330,65 @@ GET /chat/messages?thread=<thread-id>&after=<last-message-id>
 Alternativ unterstützt auch
 `GET /api/chats/<id>/messages?after=<last-message-id>` denselben Cursor.
 
+## Bilder an Memories
+
+Die erste Bildstufe unterstützt JPEG, PNG und WebP. Uploads sind standardmäßig
+auf 10 MB, 8192 × 8192 Pixel und 40 Millionen Pixel begrenzt. Der Server
+ermittelt den MIME-Type aus dem Inhalt, dekodiert das Bild mit GD, kodiert es
+neu und entfernt dabei eingebettete EXIF-Daten. Identische normalisierte Bilder
+werden über SHA-256 nur einmal gespeichert.
+
+Bild hochladen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -F "image=@screenshot.png" \
+  "${API_BASE_URL}/media"
+```
+
+Die Antwort enthält `media.id`. Danach wird das Bild einem bestehenden Memory
+zugeordnet:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "media_id":"<media-id>",
+    "role":"screenshot",
+    "caption":"Fehler beim Start der Bridge",
+    "alt_text":"Terminal mit einer Timeout-Fehlermeldung",
+    "ocr_text":"BridgeError: Agent command timed out",
+    "source":"openclaw",
+    "source_ref":"chat:<thread-id>:<message-id>",
+    "original_filename":"screenshot.png",
+    "metadata":{"topic":"bridge-client"}
+  }' \
+  "${API_BASE_URL}/memories/<memory-id>/attachments"
+```
+
+Attachments auflisten und Bildinhalt abrufen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/memories/<memory-id>/attachments"
+
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -o image.png \
+  "${API_BASE_URL}/attachments/<attachment-id>/content"
+```
+
+Erlaubte Rollen sind `image`, `screenshot`, `reference` und `document`.
+Standardmäßig sind höchstens zehn Attachments pro Memory erlaubt. Die Grenzen
+können unter `media` in `private/config.php` angepasst werden.
+
+Wichtig: Das bestehende JSON-App-Backup exportiert in dieser ersten Stufe noch
+keine Bilddaten. Vor produktiver Nutzung der Bildfunktion muss daher weiterhin
+ein vollständiges MariaDB-Backup erstellt werden.
+
 ## Backup erstellen
 
 Backups sind standardmäßig deaktiviert. Wenn sie in der Config aktiviert sind,

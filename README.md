@@ -35,6 +35,8 @@ Vor dem Deployment prüfen:
 
 - PHP 8.1 oder neuer ist aktiv.
 - PDO MySQL ist verfügbar.
+- Fileinfo und GD mit JPEG-, PNG- und WebP-Unterstützung sind für Bild-Memories
+  verfügbar.
 - MariaDB-Datenbank und Datenbankbenutzer sind eingerichtet.
 - `.htaccess` und `mod_rewrite` funktionieren im Zielverzeichnis.
 - Der Webroot kann auf `public/` zeigen oder die privaten Dateien liegen
@@ -223,6 +225,8 @@ Die Chatfunktion nutzt eigene Tabellen:
 - `chat_messages`: Rolle, Text, Quelle, optionale externe Message-ID,
   optionale `memory_id`, Metadaten und Zeitstempel.
 - `chat_thread_memories`: Zuordnung globaler Memories zu Chat-Threads.
+- `media_objects`: normalisierte JPEG-, PNG- und WebP-Bilddaten mit SHA-256.
+- `memory_attachments`: Bildbeschreibung und Zuordnung zu einem Memory.
 
 Rohverläufe bleiben Chatdaten. Dauerhaft wichtige Erkenntnisse gehören als
 kuratierte Einträge in `memories` und können einem Thread zugeordnet

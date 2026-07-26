@@ -8,6 +8,29 @@
         renameInput.form?.requestSubmit();
     });
 
+    const messageInput = document.querySelector('.chat-compose textarea[name="message"]');
+    function resizeMessageInput() {
+        if (!messageInput) {
+            return;
+        }
+        const currentHeight = messageInput.getBoundingClientRect().height;
+        const requiredHeight = Math.min(messageInput.scrollHeight, 140);
+        if (requiredHeight > currentHeight + 1) {
+            messageInput.style.height = `${requiredHeight}px`;
+        }
+    }
+    messageInput?.addEventListener('input', resizeMessageInput);
+    messageInput?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' || event.shiftKey || event.isComposing) {
+            return;
+        }
+        event.preventDefault();
+        if (messageInput.value.trim() !== '') {
+            messageInput.form?.requestSubmit();
+        }
+    });
+    resizeMessageInput();
+
     const chatLog = document.querySelector('.chat-log[data-poll-url]');
     if (!chatLog) {
         return;
