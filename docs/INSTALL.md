@@ -8,6 +8,8 @@ aber keine Serveradministration machen möchten.
 Es wird nichts automatisch hochgeladen. Zugangsdaten, Tokens, Domains und
 konkrete Webspace-Pfade gehören nicht ins Repository.
 
+Für Backups mit Bilddaten muss die PHP-Erweiterung `ZipArchive` verfügbar sein.
+
 ## Zielbild
 
 Nach der Installation gibt es:
@@ -261,6 +263,7 @@ Wichtig:
 - `backup.token` muss gesetzt sein.
 - `backup.token` darf nicht dem normalen API-Token entsprechen.
 - Das Backup-Verzeichnis darf nicht öffentlich erreichbar sein.
+- Die PHP-Erweiterung `ZipArchive` muss verfügbar sein.
 
 Backup manuell auslösen:
 
@@ -291,7 +294,7 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":true}' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip","mode":"upsert","dry_run":true}' \
   "${API_BASE_URL}/backups/restore"
 ```
 
@@ -303,7 +306,7 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":false}' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip","mode":"upsert","dry_run":false}' \
   "${API_BASE_URL}/backups/restore"
 ```
 
@@ -315,6 +318,8 @@ Hinweise:
 - `dry_run: true` prüft den Restore ohne Schreibzugriff.
 - `id`, Inhalte, `observed_at`, `created_at` und `updated_at` werden aus dem
   Backup übernommen.
+- ZIP-Backups enthalten Memories, Bilddaten und Attachment-Metadaten.
+- Ältere JSON-Backups ohne Bilddaten können weiterhin eingespielt werden.
 
 ## Spätere Datenbank-Updates
 

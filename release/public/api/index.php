@@ -1471,25 +1471,112 @@ function chat_title_tag(string $title): string
 
 function create_backup(PDO $pdo, array $config): array
 {
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('backup v2 requires ZipArchive');
+    }
     $dir = backup_dir($config);
     ensure_private_dir($dir);
     $createdAt = utc_now();
-    $file = $dir . '/openpaw-memory-' . gmdate('Ymd-His') . '-' . bin2hex(random_bytes(4)) . '.json';
-    $statement = $pdo->query('SELECT * FROM memories ORDER BY created_at ASC, id ASC');
-    $payload = [
-        'format' => 'openpaw-memory-backup-v1',
+    $base = 'openpaw-memory-' . gmdate('Ymd-His') . '-' . bin2hex(random_bytes(4));
+    $file = $dir . '/' . $base . '.zip';
+    $temporary = $dir . '/' . $base . '.tmp';
+    $memories = array_map('row_to_memory', $pdo->query('SELECT * FROM memories ORDER BY created_at ASC, id ASC')->fetchAll());
+    $attachments = backup_memory_attachments($pdo);
+    $media = backup_media_objects($pdo);
+    $manifest = [
+        'format' => 'openpaw-memory-backup-v2',
         'created_at' => $createdAt,
         'database' => 'mariadb',
-        'memories' => array_map('row_to_memory', $statement->fetchAll()),
+        'memories' => $memories,
+        'media' => $media,
+        'attachments' => $attachments,
     ];
-    file_put_contents($file, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), LOCK_EX);
+
+    $zip = new ZipArchive();
+    if ($zip->open($temporary, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        throw new RuntimeException('backup archive could not be created');
+    }
+    try {
+        if (!$zip->addFromString(
+            'manifest.json',
+            json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
+        )) {
+            throw new RuntimeException('backup manifest could not be added');
+        }
+        $statement = $pdo->query('SELECT sha256, content FROM media_objects ORDER BY sha256 ASC');
+        while ($row = $statement->fetch()) {
+            $content = $row['content'];
+            if (is_resource($content)) {
+                $content = stream_get_contents($content);
+            }
+            if (!is_string($content) || !$zip->addFromString('media/' . (string)$row['sha256'] . '.bin', $content)) {
+                throw new RuntimeException('media could not be added to backup');
+            }
+        }
+    } catch (Throwable $exception) {
+        $zip->close();
+        @unlink($temporary);
+        throw $exception;
+    }
+    if (!$zip->close()) {
+        @unlink($temporary);
+        throw new RuntimeException('backup archive could not be closed');
+    }
+    if (!rename($temporary, $file)) {
+        @unlink($temporary);
+        throw new RuntimeException('backup archive could not be finalized');
+    }
     chmod($file, 0600);
     return [
         'created' => true,
         'file' => basename($file),
         'created_at' => $createdAt,
-        'count' => count($payload['memories']),
+        'count' => count($memories),
+        'media_count' => count($media),
+        'attachment_count' => count($attachments),
     ];
+}
+
+function backup_media_objects(PDO $pdo): array
+{
+    $rows = $pdo->query(
+        'SELECT id, sha256, mime_type, byte_size, width, height, created_at
+         FROM media_objects ORDER BY created_at ASC, id ASC'
+    )->fetchAll();
+    return array_map(static fn(array $row): array => [
+        'id' => (string)$row['id'],
+        'sha256' => (string)$row['sha256'],
+        'mime_type' => (string)$row['mime_type'],
+        'byte_size' => (int)$row['byte_size'],
+        'width' => (int)$row['width'],
+        'height' => (int)$row['height'],
+        'path' => 'media/' . (string)$row['sha256'] . '.bin',
+        'created_at' => db_datetime_to_api((string)$row['created_at']),
+    ], $rows);
+}
+
+function backup_memory_attachments(PDO $pdo): array
+{
+    $rows = $pdo->query('SELECT * FROM memory_attachments ORDER BY created_at ASC, id ASC')->fetchAll();
+    return array_map(static function (array $row): array {
+        $metadata = json_decode((string)$row['metadata_json'], true);
+        return [
+            'id' => (string)$row['id'],
+            'memory_id' => (string)$row['memory_id'],
+            'media_id' => (string)$row['media_id'],
+            'role' => (string)$row['role'],
+            'caption' => $row['caption'] === null ? null : (string)$row['caption'],
+            'alt_text' => $row['alt_text'] === null ? null : (string)$row['alt_text'],
+            'ocr_text' => $row['ocr_text'] === null ? null : (string)$row['ocr_text'],
+            'source' => (string)$row['source'],
+            'source_ref' => $row['source_ref'] === null ? null : (string)$row['source_ref'],
+            'original_filename' => $row['original_filename'] === null ? null : (string)$row['original_filename'],
+            'metadata' => is_array($metadata) && !array_is_list($metadata) ? $metadata : new stdClass(),
+            'sort_order' => (int)$row['sort_order'],
+            'observed_at' => db_datetime_to_api((string)$row['observed_at']),
+            'created_at' => db_datetime_to_api((string)$row['created_at']),
+        ];
+    }, $rows);
 }
 
 function list_backups(array $config): array
@@ -1499,7 +1586,7 @@ function list_backups(array $config): array
         return [];
     }
     $backups = [];
-    foreach (glob($dir . '/openpaw-memory-*.json') ?: [] as $file) {
+    foreach (glob($dir . '/openpaw-memory-*.{json,zip}', GLOB_BRACE) ?: [] as $file) {
         $backups[] = [
             'file' => basename($file),
             'bytes' => filesize($file),
@@ -1528,6 +1615,8 @@ function restore_backup(PDO $pdo, array $config, array $payload): array
         'inserted' => 0,
         'updated' => 0,
         'skipped' => 0,
+        'media_count' => count($backup['media'] ?? []),
+        'attachment_count' => count($backup['attachments'] ?? []),
     ];
 
     $pdo->beginTransaction();
@@ -1535,6 +1624,9 @@ function restore_backup(PDO $pdo, array $config, array $payload): array
         foreach ($memories as $memory) {
             $action = restore_memory($pdo, $memory, $mode, $dryRun);
             $result[$action] = (int)$result[$action] + 1;
+        }
+        if (($backup['format'] ?? '') === 'openpaw-memory-backup-v2') {
+            restore_backup_media($pdo, $backup, $mode, $dryRun, $result);
         }
         if ($dryRun) {
             $pdo->rollBack();
@@ -1553,7 +1645,7 @@ function restore_backup(PDO $pdo, array $config, array $payload): array
 
 function validate_backup_filename(string $file): void
 {
-    if (preg_match('/\Aopenpaw-memory-\d{8}-\d{6}-[a-f0-9]{8}\.json\z/', $file) !== 1) {
+    if (preg_match('/\Aopenpaw-memory-\d{8}-\d{6}-[a-f0-9]{8}\.(?:json|zip)\z/', $file) !== 1) {
         throw new InvalidArgumentException('file must be a backup filename');
     }
 }
@@ -1584,6 +1676,9 @@ function load_backup_file(array $config, string $file): array
     if (!is_file($path)) {
         error_response(404, 'backup not found');
     }
+    if (str_ends_with($file, '.zip')) {
+        return load_backup_archive($path);
+    }
     $raw = file_get_contents($path);
     if ($raw === false) {
         throw new RuntimeException('backup could not be read');
@@ -1601,6 +1696,47 @@ function load_backup_file(array $config, string $file): array
     return $backup;
 }
 
+function load_backup_archive(string $path): array
+{
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('backup v2 requires ZipArchive');
+    }
+    $zip = new ZipArchive();
+    if ($zip->open($path) !== true) {
+        throw new InvalidArgumentException('backup archive could not be opened');
+    }
+    try {
+        for ($index = 0; $index < $zip->numFiles; $index++) {
+            $name = (string)$zip->getNameIndex($index);
+            if (
+                $name === ''
+                || str_starts_with($name, '/')
+                || str_contains($name, '\\')
+                || preg_match('~(?:^|/)\.\.(?:/|$)~', $name) === 1
+            ) {
+                throw new InvalidArgumentException('backup archive contains unsafe path');
+            }
+        }
+        $raw = $zip->getFromName('manifest.json');
+        if (!is_string($raw)) {
+            throw new InvalidArgumentException('backup archive has no manifest');
+        }
+    } finally {
+        $zip->close();
+    }
+    $backup = json_decode($raw, true);
+    if (!is_array($backup) || array_is_list($backup) || ($backup['format'] ?? '') !== 'openpaw-memory-backup-v2') {
+        throw new InvalidArgumentException('unsupported backup format');
+    }
+    foreach (['memories', 'media', 'attachments'] as $field) {
+        if (!isset($backup[$field]) || !is_array($backup[$field]) || !array_is_list($backup[$field])) {
+            throw new InvalidArgumentException('backup ' . $field . ' must be a list');
+        }
+    }
+    $backup['_archive_path'] = $path;
+    return $backup;
+}
+
 function restore_memories_from_backup(array $backup): array
 {
     $memories = [];
@@ -1611,6 +1747,160 @@ function restore_memories_from_backup(array $backup): array
         $memories[] = normalize_restore_memory($memory, $index);
     }
     return $memories;
+}
+
+function restore_backup_media(PDO $pdo, array $backup, string $mode, bool $dryRun, array &$result): void
+{
+    $archivePath = (string)($backup['_archive_path'] ?? '');
+    $zip = new ZipArchive();
+    if ($archivePath === '' || $zip->open($archivePath) !== true) {
+        throw new InvalidArgumentException('backup archive could not be opened');
+    }
+    $mediaMap = [];
+    $result['media_inserted'] = 0;
+    $result['media_deduplicated'] = 0;
+    $result['attachments_inserted'] = 0;
+    $result['attachments_updated'] = 0;
+    $result['attachments_skipped'] = 0;
+    try {
+        foreach ($backup['media'] as $index => $media) {
+            if (!is_array($media) || array_is_list($media)) {
+                throw new InvalidArgumentException('backup media at index ' . $index . ' must be an object');
+            }
+            $sourceId = clean_required_string($media['id'] ?? null, 'media[' . $index . '].id');
+            validate_id($sourceId);
+            $sha256 = clean_required_string($media['sha256'] ?? null, 'media[' . $index . '].sha256');
+            if (preg_match('/\A[a-f0-9]{64}\z/', $sha256) !== 1) {
+                throw new InvalidArgumentException('media[' . $index . '].sha256 is invalid');
+            }
+            $mimeType = clean_required_string($media['mime_type'] ?? null, 'media[' . $index . '].mime_type');
+            if (!in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+                throw new InvalidArgumentException('media[' . $index . '].mime_type is unsupported');
+            }
+            $path = clean_required_string($media['path'] ?? null, 'media[' . $index . '].path');
+            if ($path !== 'media/' . $sha256 . '.bin') {
+                throw new InvalidArgumentException('media[' . $index . '].path is invalid');
+            }
+            $content = $zip->getFromName($path);
+            if (!is_string($content)) {
+                throw new InvalidArgumentException('backup media file is missing: ' . $path);
+            }
+            $byteSize = clamp_int($media['byte_size'] ?? 0, 1, PHP_INT_MAX);
+            if (strlen($content) !== $byteSize || !hash_equals($sha256, hash('sha256', $content))) {
+                throw new InvalidArgumentException('backup media hash or size mismatch: ' . $path);
+            }
+            $existing = get_media_by_sha256($pdo, $sha256);
+            if ($existing !== null) {
+                $mediaMap[$sourceId] = $existing['id'];
+                $result['media_deduplicated']++;
+                continue;
+            }
+            $targetId = media_restore_target_id($pdo, $sourceId);
+            $mediaMap[$sourceId] = $targetId;
+            $result['media_inserted']++;
+            if (!$dryRun) {
+                $insert = $pdo->prepare(
+                    'INSERT INTO media_objects
+                        (id, sha256, mime_type, byte_size, width, height, content, created_at)
+                     VALUES
+                        (:id, :sha256, :mime_type, :byte_size, :width, :height, :content, :created_at)'
+                );
+                $insert->bindValue('id', $targetId);
+                $insert->bindValue('sha256', $sha256);
+                $insert->bindValue('mime_type', $mimeType);
+                $insert->bindValue('byte_size', $byteSize, PDO::PARAM_INT);
+                $insert->bindValue('width', clamp_int($media['width'] ?? 0, 1, 100000), PDO::PARAM_INT);
+                $insert->bindValue('height', clamp_int($media['height'] ?? 0, 1, 100000), PDO::PARAM_INT);
+                $insert->bindValue('content', $content, PDO::PARAM_LOB);
+                $insert->bindValue('created_at', parse_datetime($media['created_at'] ?? null, 'media[' . $index . '].created_at'));
+                $insert->execute();
+            }
+        }
+    } finally {
+        $zip->close();
+    }
+
+    $backupMemoryIds = array_fill_keys(array_map(static fn(array $memory): string => (string)$memory['id'], $backup['memories']), true);
+    foreach ($backup['attachments'] as $index => $attachment) {
+        if (!is_array($attachment) || array_is_list($attachment)) {
+            throw new InvalidArgumentException('backup attachment at index ' . $index . ' must be an object');
+        }
+        $id = clean_required_string($attachment['id'] ?? null, 'attachments[' . $index . '].id');
+        $memoryId = clean_required_string($attachment['memory_id'] ?? null, 'attachments[' . $index . '].memory_id');
+        $sourceMediaId = clean_required_string($attachment['media_id'] ?? null, 'attachments[' . $index . '].media_id');
+        validate_id($id);
+        validate_id($memoryId);
+        if (!isset($mediaMap[$sourceMediaId])) {
+            throw new InvalidArgumentException('attachment references missing media');
+        }
+        if (!isset($backupMemoryIds[$memoryId]) && get_memory($pdo, $memoryId) === null) {
+            throw new InvalidArgumentException('attachment references missing memory');
+        }
+        $exists = attachment_exists($pdo, $id);
+        if ($exists && $mode === 'insert_only') {
+            $result['attachments_skipped']++;
+            continue;
+        }
+        $result[$exists ? 'attachments_updated' : 'attachments_inserted']++;
+        if (!$dryRun) {
+            upsert_restore_attachment($pdo, $attachment, $id, $memoryId, $mediaMap[$sourceMediaId], $index);
+        }
+    }
+}
+
+function media_restore_target_id(PDO $pdo, string $preferred): string
+{
+    $statement = $pdo->prepare('SELECT 1 FROM media_objects WHERE id = :id');
+    $statement->execute(['id' => $preferred]);
+    return $statement->fetchColumn() === false ? $preferred : bin2hex(random_bytes(16));
+}
+
+function attachment_exists(PDO $pdo, string $id): bool
+{
+    $statement = $pdo->prepare('SELECT 1 FROM memory_attachments WHERE id = :id');
+    $statement->execute(['id' => $id]);
+    return $statement->fetchColumn() !== false;
+}
+
+function upsert_restore_attachment(
+    PDO $pdo,
+    array $attachment,
+    string $id,
+    string $memoryId,
+    string $mediaId,
+    int $index
+): void {
+    $metadata = parse_metadata($attachment['metadata'] ?? []);
+    $statement = $pdo->prepare(
+        'INSERT INTO memory_attachments
+            (id, memory_id, media_id, role, caption, alt_text, ocr_text, source, source_ref,
+             original_filename, metadata_json, sort_order, observed_at, created_at)
+         VALUES
+            (:id, :memory_id, :media_id, :role, :caption, :alt_text, :ocr_text, :source, :source_ref,
+             :original_filename, :metadata_json, :sort_order, :observed_at, :created_at)
+         ON DUPLICATE KEY UPDATE
+            memory_id = VALUES(memory_id), media_id = VALUES(media_id), role = VALUES(role),
+            caption = VALUES(caption), alt_text = VALUES(alt_text), ocr_text = VALUES(ocr_text),
+            source = VALUES(source), source_ref = VALUES(source_ref),
+            original_filename = VALUES(original_filename), metadata_json = VALUES(metadata_json),
+            sort_order = VALUES(sort_order), observed_at = VALUES(observed_at), created_at = VALUES(created_at)'
+    );
+    $statement->execute([
+        'id' => $id,
+        'memory_id' => $memoryId,
+        'media_id' => $mediaId,
+        'role' => clean_limited_string($attachment['role'] ?? 'image', 'attachments[' . $index . '].role', 32),
+        'caption' => parse_optional_string($attachment['caption'] ?? null, 'caption', 1000),
+        'alt_text' => parse_optional_string($attachment['alt_text'] ?? null, 'alt_text', 2000),
+        'ocr_text' => parse_optional_string($attachment['ocr_text'] ?? null, 'ocr_text', 100000),
+        'source' => clean_limited_string($attachment['source'] ?? 'api', 'source', 128),
+        'source_ref' => parse_optional_string($attachment['source_ref'] ?? null, 'source_ref', 255),
+        'original_filename' => sanitize_original_filename((string)($attachment['original_filename'] ?? '')),
+        'metadata_json' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        'sort_order' => clamp_int($attachment['sort_order'] ?? 0, 0, 10000),
+        'observed_at' => parse_datetime($attachment['observed_at'] ?? null, 'observed_at'),
+        'created_at' => parse_datetime($attachment['created_at'] ?? null, 'created_at'),
+    ]);
 }
 
 function normalize_restore_memory(array $memory, int $index): array

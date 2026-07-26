@@ -237,10 +237,12 @@ gespeichert. Die ältere Message-Verknüpfung bleibt kompatibel.
 
 ## Backup-Konzept
 
-Die eingebaute Backup-Funktion exportiert alle Memory-Daten aus MariaDB als
-JSON-Datei in `private/backups/`. Sie ist standardmäßig ausgeschaltet. Wenn
-Backups aktiviert werden, ist ein separater `backup.token` Pflicht; der normale
-API-Bearer-Token reicht dafür nicht.
+Die eingebaute Backup-Funktion exportiert Memories einschließlich ihrer
+Bilddaten und Attachment-Metadaten als ZIP-Datei in `private/backups/`. Das
+Archiv enthält ein JSON-Manifest und die Bilder als Binärdateien. Dafür muss
+die PHP-Erweiterung `ZipArchive` verfügbar sein. Die Funktion ist standardmäßig
+ausgeschaltet. Wenn Backups aktiviert werden, ist ein separater `backup.token`
+Pflicht; der normale API-Bearer-Token reicht dafür nicht.
 
 Der Restore-Endpunkt `POST /backups/restore` spielt eine vorhandene Backup-Datei
 aus `private/backups/` zurück. Er benötigt zusätzlich zum normalen API-Token den
@@ -248,7 +250,8 @@ separaten Backup-Token. Im Modus `upsert` werden vorhandene Erinnerungen anhand
 der `id` aktualisiert und fehlende Erinnerungen eingefügt. Im Modus
 `insert_only` werden vorhandene IDs übersprungen. Mit `dry_run: true` kann der
 Restore geprüft werden, ohne Daten zu schreiben. `id`, Inhalte, `observed_at`,
-`created_at` und `updated_at` werden aus dem Backup übernommen.
+`created_at` und `updated_at` werden aus dem Backup übernommen. Der Restore
+akzeptiert weiterhin ältere JSON-Backups ohne Bilddaten.
 
 Empfohlene Einstellungen:
 

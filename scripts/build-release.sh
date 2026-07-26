@@ -23,6 +23,7 @@ mkdir -p \
   "${RELEASE}/public/assets" \
   "${RELEASE}/private" \
   "${RELEASE}/sql/migrations" \
+  "${RELEASE}/tools/bridge-client/systemd" \
   "${RELEASE}/tools" \
   "${RELEASE}/docs" \
   "${DIST}"
@@ -55,7 +56,17 @@ touch "${RELEASE}/sql/migrations/.gitkeep"
 
 cp "${ROOT}/tools/init-db.php" "${RELEASE}/tools/init-db.php"
 cp "${ROOT}/tools/update-db.php" "${RELEASE}/tools/update-db.php"
+cp "${ROOT}/tools/bridge-client/.env.example" "${RELEASE}/tools/bridge-client/.env.example"
+cp "${ROOT}/tools/bridge-client/README.md" "${RELEASE}/tools/bridge-client/README.md"
+cp "${ROOT}/tools/bridge-client/openclaw_agent_adapter.py" "${RELEASE}/tools/bridge-client/openclaw_agent_adapter.py"
+cp "${ROOT}/tools/bridge-client/openpaw_bridge_client.py" "${RELEASE}/tools/bridge-client/openpaw_bridge_client.py"
+cp "${ROOT}/tools/bridge-client/test_openpaw_bridge_client.py" "${RELEASE}/tools/bridge-client/test_openpaw_bridge_client.py"
+cp "${ROOT}/tools/bridge-client/systemd/openpaw-bridge.service.example" \
+  "${RELEASE}/tools/bridge-client/systemd/openpaw-bridge.service.example"
 chmod +x "${RELEASE}/tools/init-db.php" "${RELEASE}/tools/update-db.php"
+chmod +x \
+  "${RELEASE}/tools/bridge-client/openclaw_agent_adapter.py" \
+  "${RELEASE}/tools/bridge-client/openpaw_bridge_client.py"
 
 cp "${ROOT}/docs/API.md" "${RELEASE}/docs/API.md"
 cp "${ROOT}/docs/ALLINKL.md" "${RELEASE}/docs/ALLINKL.md"

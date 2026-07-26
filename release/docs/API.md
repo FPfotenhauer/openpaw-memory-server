@@ -385,9 +385,8 @@ Erlaubte Rollen sind `image`, `screenshot`, `reference` und `document`.
 Standardmäßig sind höchstens zehn Attachments pro Memory erlaubt. Die Grenzen
 können unter `media` in `private/config.php` angepasst werden.
 
-Wichtig: Das bestehende JSON-App-Backup exportiert in dieser ersten Stufe noch
-keine Bilddaten. Vor produktiver Nutzung der Bildfunktion muss daher weiterhin
-ein vollständiges MariaDB-Backup erstellt werden.
+Das App-Backup enthält die Bilddaten und Attachment-Metadaten. Ein zusätzliches
+vollständiges MariaDB-Backup bleibt als zweite Sicherungsebene empfehlenswert.
 
 ## Backup erstellen
 
@@ -405,7 +404,10 @@ curl -fsS \
   "${API_BASE_URL}/backups"
 ```
 
-Die API schreibt eine JSON-Datei in das private Backup-Verzeichnis.
+Die API schreibt ein ZIP-Archiv in das private Backup-Verzeichnis. Es enthält
+`manifest.json` mit Memories, Medien- und Attachment-Metadaten sowie die
+Bildinhalte unter `media/`. Dafür muss die PHP-Erweiterung `ZipArchive`
+verfügbar sein.
 
 ## Restore
 
@@ -420,7 +422,7 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":true}' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip","mode":"upsert","dry_run":true}' \
   "${API_BASE_URL}/backups/restore"
 ```
 
@@ -432,7 +434,7 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":false}' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip","mode":"upsert","dry_run":false}' \
   "${API_BASE_URL}/backups/restore"
 ```
 
@@ -447,18 +449,29 @@ ein. `insert_only` fügt nur fehlende Erinnerungen ein und überspringt vorhande
 IDs. `id`, Inhalte, `observed_at`, `created_at` und `updated_at` werden aus dem
 Backup übernommen.
 
+ZIP-Backups verwenden das Format `openpaw-memory-backup-v2` und enthalten auch
+Bilddaten. Ältere JSON-Dateien im Format `openpaw-memory-backup-v1` können
+weiterhin wiederhergestellt werden; sie enthalten nur Memories.
+
 Antwort:
 
 ```json
 {
   "restored": true,
   "dry_run": false,
-  "file": "openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json",
+  "file": "openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip",
   "mode": "upsert",
   "count": 10,
   "inserted": 2,
   "updated": 8,
-  "skipped": 0
+  "skipped": 0,
+  "media_count": 3,
+  "attachment_count": 4,
+  "media_inserted": 3,
+  "media_deduplicated": 0,
+  "attachments_inserted": 4,
+  "attachments_updated": 0,
+  "attachments_skipped": 0
 }
 ```
 
