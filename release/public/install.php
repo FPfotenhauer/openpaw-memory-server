@@ -98,6 +98,8 @@ function build_config(array $input, string $apiToken, string $backupToken, strin
         'site' => [
             'enabled' => true,
             'session_name' => 'openpaw_site_session',
+            'session_idle_seconds' => 3600,
+            'session_absolute_seconds' => 43200,
             'username' => $input['site_username'],
             'password_hash' => $passwordHash,
         ],
@@ -119,6 +121,13 @@ function build_config(array $input, string $apiToken, string $backupToken, strin
             'max_requests' => 120,
             'window_seconds' => 60,
             'runtime_dir' => '__PRIVATE_DIR__/runtime',
+        ],
+        'media' => [
+            'max_upload_bytes' => 10485760,
+            'max_width' => 8192,
+            'max_height' => 8192,
+            'max_pixels' => 40000000,
+            'max_attachments_per_memory' => 10,
         ],
         'security' => [
             'csp_enabled' => true,

@@ -1,4 +1,4 @@
-# OpenPaw Release-Paket 0.3.0
+# OpenPaw Release-Paket 0.7.0
 
 Dieses Verzeichnis enthält die Dateien, die später als Paket auf den Webspace
 kopiert werden können.
@@ -18,6 +18,22 @@ kopiert werden können.
 3. Beim ersten Aufruf den Web-Installer ausfüllen.
 4. Angezeigte Tokens sicher speichern.
 5. Login und API unter `/api/health` testen.
+
+## Update-Kurzablauf
+
+1. Bestehende `private/config.php` und Datenbank sichern.
+2. Dieses Paket hochladen und auf dem Webspace entpacken, aber `private/config.php`,
+   `private/backups/` und `private/runtime/` nicht überschreiben.
+3. Als Website-User einloggen und `/update` öffnen.
+4. Datenbank-Update im Browser ausführen.
+
+Alternativ per SSH:
+
+```bash
+php tools/update-db.php
+```
+
+Der genaue Ablauf für All-Inkl steht in `docs/ALLINKL.md`.
 
 Falls der Web-Installer nicht verwendet werden kann, kann die Datenbank auch
 per CLI eingerichtet werden:

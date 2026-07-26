@@ -7,6 +7,8 @@ return [
     'site' => [
         'enabled' => true,
         'session_name' => 'openpaw_site_session',
+        'session_idle_seconds' => 3600,
+        'session_absolute_seconds' => 43200,
         'username' => 'replace_with_login_name',
         'password_hash' => 'replace_with_password_hash_from_password_hash',
     ],
@@ -31,6 +33,18 @@ return [
         'max_requests' => 120,
         'window_seconds' => 60,
         'runtime_dir' => __DIR__ . '/runtime',
+    ],
+
+    'bridge' => [
+        'claim_timeout_seconds' => 900,
+    ],
+
+    'media' => [
+        'max_upload_bytes' => 10485760,
+        'max_width' => 8192,
+        'max_height' => 8192,
+        'max_pixels' => 40000000,
+        'max_attachments_per_memory' => 10,
     ],
 
     'security' => [

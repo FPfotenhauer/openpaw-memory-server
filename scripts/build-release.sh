@@ -3,22 +3,30 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RELEASE="${ROOT}/release"
+DIST="${ROOT}/dist"
 VERSION="$(tr -d '[:space:]' < "${ROOT}/VERSION")"
+ZIP_FILE="${DIST}/openpaw-memory-server-${VERSION}.zip"
 
 if [[ -z "${VERSION}" ]]; then
   echo "VERSION is empty" >&2
   exit 2
 fi
+if ! command -v zip >/dev/null 2>&1; then
+  echo "zip command is required to build the release package" >&2
+  exit 2
+fi
 
-rm -rf "${RELEASE}"
+rm -rf "${RELEASE}" "${DIST}"
 
 mkdir -p \
   "${RELEASE}/public/api" \
   "${RELEASE}/public/assets" \
   "${RELEASE}/private" \
   "${RELEASE}/sql/migrations" \
+  "${RELEASE}/tools/bridge-client/systemd" \
   "${RELEASE}/tools" \
-  "${RELEASE}/docs"
+  "${RELEASE}/docs" \
+  "${DIST}"
 
 cp "${ROOT}/VERSION" "${RELEASE}/VERSION"
 cp "${ROOT}/LICENSE" "${RELEASE}/LICENSE"
@@ -31,6 +39,7 @@ cp "${ROOT}/public/.htaccess" "${RELEASE}/public/.htaccess"
 cp "${ROOT}/public/api/index.php" "${RELEASE}/public/api/index.php"
 cp "${ROOT}/public/assets/site.css" "${RELEASE}/public/assets/site.css"
 cp "${ROOT}/public/assets/theme.js" "${RELEASE}/public/assets/theme.js"
+cp "${ROOT}/public/assets/chat.js" "${RELEASE}/public/assets/chat.js"
 cp "${ROOT}/public/assets/openpaw-icon.png" "${RELEASE}/public/assets/openpaw-icon.png"
 cp "${ROOT}/public/assets/openpaw-icon.svg" "${RELEASE}/public/assets/openpaw-icon.svg"
 cp "${ROOT}/public/assets/openpaw-mascot.png" "${RELEASE}/public/assets/openpaw-mascot.png"
@@ -40,13 +49,27 @@ cp "${ROOT}/private/.htaccess" "${RELEASE}/private/.htaccess"
 cp "${ROOT}/private/config.example.php" "${RELEASE}/private/config.example.php"
 
 cp "${ROOT}/sql/schema.mariadb.sql" "${RELEASE}/sql/schema.mariadb.sql"
+if compgen -G "${ROOT}/sql/migrations/*.sql" > /dev/null; then
+  cp "${ROOT}"/sql/migrations/*.sql "${RELEASE}/sql/migrations/"
+fi
 touch "${RELEASE}/sql/migrations/.gitkeep"
 
 cp "${ROOT}/tools/init-db.php" "${RELEASE}/tools/init-db.php"
 cp "${ROOT}/tools/update-db.php" "${RELEASE}/tools/update-db.php"
+cp "${ROOT}/tools/bridge-client/.env.example" "${RELEASE}/tools/bridge-client/.env.example"
+cp "${ROOT}/tools/bridge-client/README.md" "${RELEASE}/tools/bridge-client/README.md"
+cp "${ROOT}/tools/bridge-client/openclaw_agent_adapter.py" "${RELEASE}/tools/bridge-client/openclaw_agent_adapter.py"
+cp "${ROOT}/tools/bridge-client/openpaw_bridge_client.py" "${RELEASE}/tools/bridge-client/openpaw_bridge_client.py"
+cp "${ROOT}/tools/bridge-client/test_openpaw_bridge_client.py" "${RELEASE}/tools/bridge-client/test_openpaw_bridge_client.py"
+cp "${ROOT}/tools/bridge-client/systemd/openpaw-bridge.service.example" \
+  "${RELEASE}/tools/bridge-client/systemd/openpaw-bridge.service.example"
 chmod +x "${RELEASE}/tools/init-db.php" "${RELEASE}/tools/update-db.php"
+chmod +x \
+  "${RELEASE}/tools/bridge-client/openclaw_agent_adapter.py" \
+  "${RELEASE}/tools/bridge-client/openpaw_bridge_client.py"
 
 cp "${ROOT}/docs/API.md" "${RELEASE}/docs/API.md"
+cp "${ROOT}/docs/ALLINKL.md" "${RELEASE}/docs/ALLINKL.md"
 cp "${ROOT}/docs/INSTALL.md" "${RELEASE}/docs/INSTALL.md"
 cp "${ROOT}/docs/RELEASE.md" "${RELEASE}/docs/RELEASE.md"
 cp "${ROOT}/docs/WEBSITE.md" "${RELEASE}/docs/WEBSITE.md"
@@ -74,6 +97,22 @@ kopiert werden können.
 4. Angezeigte Tokens sicher speichern.
 5. Login und API unter \`/api/health\` testen.
 
+## Update-Kurzablauf
+
+1. Bestehende \`private/config.php\` und Datenbank sichern.
+2. Dieses Paket hochladen und auf dem Webspace entpacken, aber \`private/config.php\`,
+   \`private/backups/\` und \`private/runtime/\` nicht überschreiben.
+3. Als Website-User einloggen und \`/update\` öffnen.
+4. Datenbank-Update im Browser ausführen.
+
+Alternativ per SSH:
+
+\`\`\`bash
+php tools/update-db.php
+\`\`\`
+
+Der genaue Ablauf für All-Inkl steht in \`docs/ALLINKL.md\`.
+
 Falls der Web-Installer nicht verwendet werden kann, kann die Datenbank auch
 per CLI eingerichtet werden:
 
@@ -92,4 +131,7 @@ Keine echten Zugangsdaten, Tokens, Domains oder Webspace-Pfade in dieses Paket
 eintragen, solange es ins Repository übernommen wird.
 EOF
 
+(cd "${RELEASE}" && zip -qr "${ZIP_FILE}" .)
+
 echo "Built release ${VERSION} in ${RELEASE}"
+echo "Built ZIP package ${ZIP_FILE}"

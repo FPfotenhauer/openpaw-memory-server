@@ -8,13 +8,15 @@ aber keine Serveradministration machen möchten.
 Es wird nichts automatisch hochgeladen. Zugangsdaten, Tokens, Domains und
 konkrete Webspace-Pfade gehören nicht ins Repository.
 
+Für Backups mit Bilddaten muss die PHP-Erweiterung `ZipArchive` verfügbar sein.
+
 ## Zielbild
 
 Nach der Installation gibt es:
 
 - eine Startseite unter `/`
 - einen Login unter `/login`
-- einen geschützten Chat-Platzhalter unter `/chat`
+- einen geschützten Chatbereich unter `/chat`
 - die unabhängige Memory-API unter `/api`
 - private Konfiguration und Backups außerhalb des öffentlichen Webroots oder
   durch Zugriffsschutz abgesichert
@@ -40,12 +42,17 @@ werden:
 scripts/build-release.sh
 ```
 
+Das Skript erzeugt zusätzlich ein ZIP-Paket unter `dist/`. Dieses ZIP kann auf
+dem Webspace hochgeladen und dort entpackt werden.
+
 ## Voraussetzungen
 
 Vor dem Upload prüfen oder im Webspace-Kundenbereich nachsehen:
 
 - PHP 8.1 oder neuer ist verfügbar.
 - Die PHP-Erweiterung `pdo_mysql` ist aktiv.
+- Für Bild-Memories sind `fileinfo` und GD mit JPEG-, PNG- und
+  WebP-Unterstützung aktiv.
 - Eine MariaDB-Datenbank kann angelegt werden.
 - `.htaccess` und Rewrite-Regeln werden unterstützt.
 - Der öffentliche Webroot kann idealerweise auf den Ordner `public/` zeigen.
@@ -94,7 +101,8 @@ Alternative ohne Web-Installer:
 php release/tools/init-db.php
 ```
 
-Das Schema legt die Tabelle `memories` an. Diese enthält unter anderem:
+Das Schema legt die Tabellen `memories`, `chat_threads` und `chat_messages` an.
+`memories` enthält unter anderem:
 
 - Text und Tags
 - `metadata`
@@ -106,6 +114,9 @@ Das Schema legt die Tabelle `memories` an. Diese enthält unter anderem:
 - `observed_at`
 - Zeitstempel
 - Fulltext-Index für einfache Suche
+
+Die Chat-Tabellen speichern Threads und Nachrichten getrennt von den
+kuratierten Memory-Einträgen.
 
 ## Dateien hochladen
 
@@ -252,6 +263,7 @@ Wichtig:
 - `backup.token` muss gesetzt sein.
 - `backup.token` darf nicht dem normalen API-Token entsprechen.
 - Das Backup-Verzeichnis darf nicht öffentlich erreichbar sein.
+- Die PHP-Erweiterung `ZipArchive` muss verfügbar sein.
 
 Backup manuell auslösen:
 
@@ -282,7 +294,7 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":true}' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip","mode":"upsert","dry_run":true}' \
   "${API_BASE_URL}/backups/restore"
 ```
 
@@ -294,7 +306,7 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":false}' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip","mode":"upsert","dry_run":false}' \
   "${API_BASE_URL}/backups/restore"
 ```
 
@@ -306,6 +318,8 @@ Hinweise:
 - `dry_run: true` prüft den Restore ohne Schreibzugriff.
 - `id`, Inhalte, `observed_at`, `created_at` und `updated_at` werden aus dem
   Backup übernommen.
+- ZIP-Backups enthalten Memories, Bilddaten und Attachment-Metadaten.
+- Ältere JSON-Backups ohne Bilddaten können weiterhin eingespielt werden.
 
 ## Spätere Datenbank-Updates
 
@@ -317,6 +331,12 @@ php release/tools/update-db.php
 ```
 
 Das Skript merkt sich angewendete Updates in der Tabelle `schema_migrations`.
+
+Für All-Inkl-Webspace mit oder ohne SSH steht ein genauer Ablauf in
+`docs/ALLINKL.md`.
+
+Wenn die Website bereits läuft, kann die Datenbank nach dem Upload auch über
+die geschützte Browser-Routine `/update` aktualisiert werden.
 
 ## Sicherheit prüfen
 
@@ -368,6 +388,6 @@ Wenn die Tests erfolgreich sind:
 
 1. API-Token in OpenPaw/Paw eintragen.
 2. `API_BASE_URL` mit `/api` verwenden.
-3. Nur notwendige Clients freischalten.
-4. Backup-Strategie festlegen.
-5. Erst danach den späteren Chat ausbauen.
+3. Chat unter `/chat` testen.
+4. Nur notwendige Clients freischalten.
+5. Backup-Strategie festlegen.

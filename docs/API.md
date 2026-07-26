@@ -167,6 +167,227 @@ Antwort:
 }
 ```
 
+## Chats
+
+Chatnachrichten bleiben von Memory-Einträgen getrennt. Ein Chat besteht aus
+einem Thread und beliebig vielen Nachrichten. Nachrichten können optional über
+`memory_id` auf kuratierte Memory-Einträge verweisen.
+
+Thread anlegen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Paw / Frank","channel":"web","owner_context":"openpaw"}' \
+  "${API_BASE_URL}/chats"
+```
+
+Threads auflisten:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats?limit=20&offset=0"
+```
+
+Threads suchen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/search?q=Signal&limit=20"
+```
+
+Die Suche prüft Thread-Titel, Kanal, Kontext und Nachrichteninhalte.
+
+Thread lesen oder aktualisieren:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/<id>"
+
+curl -fsS \
+  -X PATCH \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Paw / Frank notes","status":"archived"}' \
+  "${API_BASE_URL}/chats/<id>"
+```
+
+Thread löschen:
+
+```bash
+curl -fsS \
+  -X DELETE \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/<id>"
+```
+
+Die zugehörigen Nachrichten werden durch die Datenbankbeziehung mit gelöscht.
+
+Nachricht speichern:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"role":"frank","text":"Bitte merk dir diesen Verlauf.","source":"web"}' \
+  "${API_BASE_URL}/chats/<id>/messages"
+```
+
+Nachrichten lesen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/<id>/messages?limit=50&offset=0"
+```
+
+Memory für einen Thread speichern:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Die wichtigste Erkenntnis dieses Threads."}' \
+  "${API_BASE_URL}/chats/<id>/memories"
+```
+
+Thread-Memories lesen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/chats/<id>/memories"
+```
+
+Der folgende ältere Endpunkt bleibt zur Kompatibilität verfügbar und ordnet
+das erzeugte Memory ebenfalls dem Thread zu:
+
+```bash
+curl -fsS \
+  -X POST \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  "${API_BASE_URL}/chats/<id>/messages/<message-id>/memory"
+```
+
+Der Kompatibilitätsendpunkt setzt weiterhin `chat_messages.memory_id`, ordnet
+das Memory aber zusätzlich über `chat_thread_memories` dem Thread zu. Wenn die
+Nachricht bereits verknüpft ist, wird das vorhandene Memory zurückgegeben.
+
+Wichtige Felder:
+
+- Thread: `title`, `channel`, `owner_context`, `status`, `metadata`.
+- Message: `role`, `text`, `source`, `external_message_id`, `memory_id`,
+  `metadata`, `observed_at`.
+- Erlaubte Rollen: `frank`, `paw`, `system`, `external`.
+- Erlaubte Thread-Statuswerte: `open`, `archived`.
+
+## Pull-Bridge
+
+Die Bridge verwendet dieselbe Bearer-Token-Authentifizierung wie die übrige
+API. Es werden keine eingehenden Verbindungen zum lokalen Agenten benötigt.
+Nachrichten, die Frank im Web-Chat sendet, werden mit Status `pending`
+gespeichert.
+
+Pending Nachrichten atomar claimen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":10}' \
+  "${API_BASE_URL}/bridge/messages/claim"
+```
+
+Die Antwort enthält ein kurzlebiges `claim_token` und die geclaimten
+Nachrichten. Ohne Antwort werden Claims standardmäßig nach 900 Sekunden wieder
+freigegeben. Der Wert kann über `bridge.claim_timeout_seconds` konfiguriert
+werden.
+
+Antwort zurückschreiben:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"claim_token":"<claim-token>","text":"Antwort von Paw"}' \
+  "${API_BASE_URL}/bridge/messages/<message-id>/reply"
+```
+
+Die Antwort wird als normale `paw`-Nachricht im ursprünglichen Thread
+gespeichert. Wiederholte Reply-Requests erzeugen keine doppelte Antwort.
+
+Browser-Polling mit Website-Session:
+
+```text
+GET /chat/messages?thread=<thread-id>&after=<last-message-id>
+```
+
+Alternativ unterstützt auch
+`GET /api/chats/<id>/messages?after=<last-message-id>` denselben Cursor.
+
+## Bilder an Memories
+
+Die erste Bildstufe unterstützt JPEG, PNG und WebP. Uploads sind standardmäßig
+auf 10 MB, 8192 × 8192 Pixel und 40 Millionen Pixel begrenzt. Der Server
+ermittelt den MIME-Type aus dem Inhalt, dekodiert das Bild mit GD, kodiert es
+neu und entfernt dabei eingebettete EXIF-Daten. Identische normalisierte Bilder
+werden über SHA-256 nur einmal gespeichert.
+
+Bild hochladen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -F "image=@screenshot.png" \
+  "${API_BASE_URL}/media"
+```
+
+Die Antwort enthält `media.id`. Danach wird das Bild einem bestehenden Memory
+zugeordnet:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "media_id":"<media-id>",
+    "role":"screenshot",
+    "caption":"Fehler beim Start der Bridge",
+    "alt_text":"Terminal mit einer Timeout-Fehlermeldung",
+    "ocr_text":"BridgeError: Agent command timed out",
+    "source":"openclaw",
+    "source_ref":"chat:<thread-id>:<message-id>",
+    "original_filename":"screenshot.png",
+    "metadata":{"topic":"bridge-client"}
+  }' \
+  "${API_BASE_URL}/memories/<memory-id>/attachments"
+```
+
+Attachments auflisten und Bildinhalt abrufen:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  "${API_BASE_URL}/memories/<memory-id>/attachments"
+
+curl -fsS \
+  -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
+  -o image.png \
+  "${API_BASE_URL}/attachments/<attachment-id>/content"
+```
+
+Erlaubte Rollen sind `image`, `screenshot`, `reference` und `document`.
+Standardmäßig sind höchstens zehn Attachments pro Memory erlaubt. Die Grenzen
+können unter `media` in `private/config.php` angepasst werden.
+
+Das App-Backup enthält die Bilddaten und Attachment-Metadaten. Ein zusätzliches
+vollständiges MariaDB-Backup bleibt als zweite Sicherungsebene empfehlenswert.
+
 ## Backup erstellen
 
 Backups sind standardmäßig deaktiviert. Wenn sie in der Config aktiviert sind,
@@ -183,7 +404,10 @@ curl -fsS \
   "${API_BASE_URL}/backups"
 ```
 
-Die API schreibt eine JSON-Datei in das private Backup-Verzeichnis.
+Die API schreibt ein ZIP-Archiv in das private Backup-Verzeichnis. Es enthält
+`manifest.json` mit Memories, Medien- und Attachment-Metadaten sowie die
+Bildinhalte unter `media/`. Dafür muss die PHP-Erweiterung `ZipArchive`
+verfügbar sein.
 
 ## Restore
 
@@ -198,7 +422,7 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":true}' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip","mode":"upsert","dry_run":true}' \
   "${API_BASE_URL}/backups/restore"
 ```
 
@@ -210,7 +434,7 @@ curl -fsS \
   -H "Authorization: Bearer ${OPENPAW_MEMORY_TOKEN}" \
   -H "X-Backup-Token: ${OPENPAW_MEMORY_BACKUP_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json","mode":"upsert","dry_run":false}' \
+  -d '{"file":"openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip","mode":"upsert","dry_run":false}' \
   "${API_BASE_URL}/backups/restore"
 ```
 
@@ -225,18 +449,29 @@ ein. `insert_only` fügt nur fehlende Erinnerungen ein und überspringt vorhande
 IDs. `id`, Inhalte, `observed_at`, `created_at` und `updated_at` werden aus dem
 Backup übernommen.
 
+ZIP-Backups verwenden das Format `openpaw-memory-backup-v2` und enthalten auch
+Bilddaten. Ältere JSON-Dateien im Format `openpaw-memory-backup-v1` können
+weiterhin wiederhergestellt werden; sie enthalten nur Memories.
+
 Antwort:
 
 ```json
 {
   "restored": true,
   "dry_run": false,
-  "file": "openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.json",
+  "file": "openpaw-memory-YYYYMMDD-HHMMSS-xxxxxxxx.zip",
   "mode": "upsert",
   "count": 10,
   "inserted": 2,
   "updated": 8,
-  "skipped": 0
+  "skipped": 0,
+  "media_count": 3,
+  "attachment_count": 4,
+  "media_inserted": 3,
+  "media_deduplicated": 0,
+  "attachments_inserted": 4,
+  "attachments_updated": 0,
+  "attachments_skipped": 0
 }
 ```
 
@@ -264,7 +499,7 @@ Wichtige Statuscodes:
 - `400`: ungültige Eingabe.
 - `401`: fehlender oder falscher Bearer Token.
 - `403`: fehlender oder falscher Backup-Token.
-- `404`: Endpunkt oder Erinnerung nicht gefunden.
+- `404`: Endpunkt, Erinnerung oder Chat-Thread nicht gefunden.
 - `409`: ID existiert bereits.
 - `413`: Request Body zu groß.
 - `429`: Rate Limit überschritten.
@@ -276,7 +511,7 @@ Wichtige Statuscodes:
   ob eine Erinnerung aus Codex, OpenPaw/Paw, Signal oder manueller Pflege kam.
 - Tags sollten klein und stabil bleiben, z. B. `frank`, `preference`, `project`,
   `server`, `security`.
-- Für Chat-Integration sollte der Client vor einer Antwort suchen und nur bei
-  hoher Relevanz neue Erinnerungen schreiben.
-- Lösch- und Backup-Funktionen sollten nicht an allgemeine Chat-Befehle
-  gekoppelt werden.
+- Rohverläufe gehören in `chat_messages`; dauerhaft wichtige Erkenntnisse
+  gehören kuratiert in `memories` und können per `memory_id` verlinkt werden.
+- Löschbefehle sollten eine explizite ID verlangen. Backup-Funktionen sollten
+  nicht an allgemeine Chat-Befehle gekoppelt werden.

@@ -1,9 +1,9 @@
 # OpenPaw Memory Server
 
 Kleiner PHP/MariaDB-Memory-Server für OpenPaw/Paw. Der Fokus liegt auf robustem
-Speichern, Lesen und Suchen von Erinnerungen. Die Website bietet zunächst nur
-Startseite, Login und einen geschützten Chat-Platzhalter; spätere Clients wie
-Signal können dieselbe API nutzen.
+Speichern, Lesen und Suchen von Erinnerungen. Die Website bietet Startseite,
+Login und einen geschützten Chatbereich; spätere Clients wie Signal können
+dieselbe API nutzen.
 
 ## Architektur
 
@@ -16,11 +16,18 @@ Signal können dieselbe API nutzen.
 - MariaDB ist die Primärdatenbank. SQLite bleibt nur ein möglicher späterer
   Fallback, falls wirklich nötig.
 
-Die Website stellt Startseite, Login und eine geschützte Chat-Platzhalterseite
-bereit. Die API bleibt davon getrennt und speichert Erinnerungen mit Text, Tags,
-Metadaten, Art, Wichtigkeit, Scope, Quelle, Confidence, Visibility und
-Zeitstempeln. Die Suche verwendet MariaDB-Fulltext; falls der Fulltext-Index
-nicht nutzbar ist, fällt die API auf einfache `LIKE`-Suche zurück.
+Die Website stellt Startseite, Login und einen geschützten Chatbereich bereit.
+Der Chat speichert Threads und Nachrichten serverseitig, ohne den API-Token an
+den Browser auszugeben. Web-Nachrichten können von einem lokalen Agenten über
+authentifizierte Pull-Bridge-Endpunkte geclaimt und beantwortet werden, ohne
+eingehende Ports am lokalen System zu öffnen. Chatnachrichten und
+Memory-Einträge bleiben getrennt,
+können aber über Referenzen verbunden werden. Mehrere globale Memories können
+über `chat_thread_memories` einem Thread zugeordnet werden. Die API speichert
+Erinnerungen mit Text, Tags, Metadaten, Art, Wichtigkeit, Scope, Quelle,
+Confidence, Visibility und Zeitstempeln. Die Suche verwendet MariaDB-Fulltext; falls der
+Fulltext-Index nicht nutzbar ist, fällt die API auf einfache `LIKE`-Suche
+zurück.
 
 ## Realistische Webspace-Annahmen
 
@@ -28,6 +35,8 @@ Vor dem Deployment prüfen:
 
 - PHP 8.1 oder neuer ist aktiv.
 - PDO MySQL ist verfügbar.
+- Fileinfo und GD mit JPEG-, PNG- und WebP-Unterstützung sind für Bild-Memories
+  verfügbar.
 - MariaDB-Datenbank und Datenbankbenutzer sind eingerichtet.
 - `.htaccess` und `mod_rewrite` funktionieren im Zielverzeichnis.
 - Der Webroot kann auf `public/` zeigen oder die privaten Dateien liegen
@@ -52,7 +61,8 @@ installierbaren Dateien mit `public/`, `private/`, `sql/`, `tools/` und `docs/`.
 Die ausführliche Anleitung steht in `docs/INSTALL.md`.
 
 1. Release-Paket mit `scripts/build-release.sh` erzeugen.
-2. Dateien aus `release/` hochladen.
+2. ZIP aus `dist/` hochladen und auf dem Webspace entpacken oder Dateien aus
+   `release/` hochladen.
 3. Webserver so konfigurieren, dass `public/` der Webroot ist.
 4. Startseite öffnen und den Web-Installer ausfüllen.
 5. Falls Webroot-Trennung nicht möglich ist, `private/` zusätzlich per `.htaccess` sperren
@@ -67,6 +77,9 @@ Alle Endpunkte benötigen:
 ```http
 Authorization: Bearer <token>
 ```
+
+Der lokale Pull-Client für Paw/OpenClaw liegt unter `tools/bridge-client/`.
+Setup und Betrieb sind in `tools/bridge-client/README.md` beschrieben.
 
 Für Beispiele:
 
@@ -204,12 +217,32 @@ Standardmäßig erlaubte Klassifizierungswerte:
 Diese Listen können in `private/config.php` unter `memory.allowed_*` erweitert
 werden.
 
+## Chat-Modell
+
+Die Chatfunktion nutzt eigene Tabellen:
+
+- `chat_threads`: Titel, Kanal, Kontext, Status, Metadaten und Zeitstempel.
+- `chat_messages`: Rolle, Text, Quelle, optionale externe Message-ID,
+  optionale `memory_id`, Metadaten und Zeitstempel.
+- `chat_thread_memories`: Zuordnung globaler Memories zu Chat-Threads.
+- `media_objects`: normalisierte JPEG-, PNG- und WebP-Bilddaten mit SHA-256.
+- `memory_attachments`: Bildbeschreibung und Zuordnung zu einem Memory.
+
+Rohverläufe bleiben Chatdaten. Dauerhaft wichtige Erkenntnisse gehören als
+kuratierte Einträge in `memories` und können einem Thread zugeordnet
+werden. Memories bleiben bewusst global, damit sie in der normalen
+Memory-Suche gefunden werden. Der Bezug zum Chat-Thread wird über
+`chat_thread_memories` sowie die Metadaten `origin` und `chat_thread_id`
+gespeichert. Die ältere Message-Verknüpfung bleibt kompatibel.
+
 ## Backup-Konzept
 
-Die eingebaute Backup-Funktion exportiert alle Memory-Daten aus MariaDB als
-JSON-Datei in `private/backups/`. Sie ist standardmäßig ausgeschaltet. Wenn
-Backups aktiviert werden, ist ein separater `backup.token` Pflicht; der normale
-API-Bearer-Token reicht dafür nicht.
+Die eingebaute Backup-Funktion exportiert Memories einschließlich ihrer
+Bilddaten und Attachment-Metadaten als ZIP-Datei in `private/backups/`. Das
+Archiv enthält ein JSON-Manifest und die Bilder als Binärdateien. Dafür muss
+die PHP-Erweiterung `ZipArchive` verfügbar sein. Die Funktion ist standardmäßig
+ausgeschaltet. Wenn Backups aktiviert werden, ist ein separater `backup.token`
+Pflicht; der normale API-Bearer-Token reicht dafür nicht.
 
 Der Restore-Endpunkt `POST /backups/restore` spielt eine vorhandene Backup-Datei
 aus `private/backups/` zurück. Er benötigt zusätzlich zum normalen API-Token den
@@ -217,7 +250,8 @@ separaten Backup-Token. Im Modus `upsert` werden vorhandene Erinnerungen anhand
 der `id` aktualisiert und fehlende Erinnerungen eingefügt. Im Modus
 `insert_only` werden vorhandene IDs übersprungen. Mit `dry_run: true` kann der
 Restore geprüft werden, ohne Daten zu schreiben. `id`, Inhalte, `observed_at`,
-`created_at` und `updated_at` werden aus dem Backup übernommen.
+`created_at` und `updated_at` werden aus dem Backup übernommen. Der Restore
+akzeptiert weiterhin ältere JSON-Backups ohne Bilddaten.
 
 Empfohlene Einstellungen:
 
@@ -249,6 +283,37 @@ Checkliste vor öffentlicher Nutzung:
   nur noch „Bereits installiert“ zeigt.
 - Dateiberechtigungen für Config und Backups restriktiv setzen.
 - Backup-Dateien regelmäßig extern sichern und alte Backups bewusst löschen.
+
+### Dateiberechtigungen für `private/`
+
+Für einen klassischen Webspace sind folgende Berechtigungen ein sinnvoller
+Ausgangspunkt:
+
+```text
+private/                 750
+private/config.php       600 oder 640
+private/.htaccess        644
+private/backups/         700 oder 750
+private/runtime/         700 oder 750
+Backup-ZIP-Dateien       600
+```
+
+`private/config.php` enthält Datenbankzugangsdaten und Tokens und sollte daher
+möglichst nur für den Besitzer lesbar sein. `private/backups/` und
+`private/runtime/` müssen für den PHP-Prozess beschreibbar sein. Falls PHP bei
+`700` beziehungsweise `600` mit `Permission denied` scheitert, zunächst die
+Gruppenrechte mit `750` beziehungsweise `640` erweitern. Verzeichnisse oder
+Dateien nicht pauschal auf `777` setzen.
+
+Nach der Installation im Browser prüfen, dass weder die Konfiguration noch das
+Backup-Verzeichnis öffentlich erreichbar sind:
+
+- `https://meinedomain.com/private/config.php`
+- `https://meinedomain.com/private/backups/`
+
+Beide Aufrufe müssen mit `403 Forbidden` oder `404 Not Found` enden und dürfen
+weder Dateiinhalte noch Verzeichnislisten anzeigen. Neu erzeugte Backup-ZIPs
+setzt die Anwendung automatisch auf `0600`.
 
 ## Migrationsplan vom Prototyp
 
