@@ -284,6 +284,37 @@ Checkliste vor öffentlicher Nutzung:
 - Dateiberechtigungen für Config und Backups restriktiv setzen.
 - Backup-Dateien regelmäßig extern sichern und alte Backups bewusst löschen.
 
+### Dateiberechtigungen für `private/`
+
+Für einen klassischen Webspace sind folgende Berechtigungen ein sinnvoller
+Ausgangspunkt:
+
+```text
+private/                 750
+private/config.php       600 oder 640
+private/.htaccess        644
+private/backups/         700 oder 750
+private/runtime/         700 oder 750
+Backup-ZIP-Dateien       600
+```
+
+`private/config.php` enthält Datenbankzugangsdaten und Tokens und sollte daher
+möglichst nur für den Besitzer lesbar sein. `private/backups/` und
+`private/runtime/` müssen für den PHP-Prozess beschreibbar sein. Falls PHP bei
+`700` beziehungsweise `600` mit `Permission denied` scheitert, zunächst die
+Gruppenrechte mit `750` beziehungsweise `640` erweitern. Verzeichnisse oder
+Dateien nicht pauschal auf `777` setzen.
+
+Nach der Installation im Browser prüfen, dass weder die Konfiguration noch das
+Backup-Verzeichnis öffentlich erreichbar sind:
+
+- `https://meinedomain.com/private/config.php`
+- `https://meinedomain.com/private/backups/`
+
+Beide Aufrufe müssen mit `403 Forbidden` oder `404 Not Found` enden und dürfen
+weder Dateiinhalte noch Verzeichnislisten anzeigen. Neu erzeugte Backup-ZIPs
+setzt die Anwendung automatisch auf `0600`.
+
 ## Migrationsplan vom Prototyp
 
 Der vorhandene Python-Prototyp bleibt als Referenz erhalten. Für den Webspace
