@@ -245,6 +245,22 @@ p {
     background: var(--panel-soft);
 }
 
+:root[data-theme="light"] .chat-message pre {
+    border-color: var(--line);
+    background: #fffaf2;
+    color: var(--text);
+}
+
+:root[data-theme="light"] .chat-message.frank pre {
+    border-color: #e3a252;
+    background: #ffdda9;
+    color: #21170d;
+}
+
+:root[data-theme="light"] .chat-message.system pre {
+    color: var(--muted);
+}
+
 :root[data-theme="light"] .op-topbar {
     background: #f8f1e8;
 }
@@ -495,7 +511,7 @@ p {
     position: relative;
     display: grid;
     grid-template-columns: 250px minmax(0, 1fr);
-    min-height: calc(100vh - 44px);
+    height: calc(100vh - 44px);
     border: 1px solid var(--line);
     border-radius: 28px;
     background: rgba(18, 14, 9, 0.95);
@@ -510,6 +526,8 @@ p {
     padding: 18px 18px 66px;
     border-right: 1px solid var(--line);
     background: #14100b;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .chat-new {
@@ -563,9 +581,10 @@ p {
 }
 
 .chat-main {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
     min-width: 0;
+    min-height: 0;
     padding: 22px 22px 14px;
 }
 
@@ -617,8 +636,9 @@ p {
 .chat-log {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
     gap: 12px;
-    min-height: 420px;
+    min-height: 0;
     padding: 24px 0;
     overflow-y: auto;
 }
@@ -708,7 +728,7 @@ p {
 
 .chat-memory-form {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.4fr) auto;
     gap: 8px;
 }
 
@@ -1090,6 +1110,7 @@ p {
     }
 
     .chat-shell {
+        height: auto;
         min-height: calc(100vh - 36px);
     }
 
@@ -1103,7 +1124,13 @@ p {
     }
 
     .chat-main {
+        min-height: 70vh;
         padding: 24px 18px 78px;
+    }
+
+    .chat-log {
+        min-height: 420px;
+        max-height: 65vh;
     }
 
     .chat-head {
@@ -1111,6 +1138,10 @@ p {
     }
 
     .chat-compose {
+        grid-template-columns: 1fr;
+    }
+
+    .chat-memory-form {
         grid-template-columns: 1fr;
     }
 

@@ -7,6 +7,8 @@ return [
     'site' => [
         'enabled' => true,
         'session_name' => 'openpaw_site_session',
+        'session_idle_seconds' => 3600,
+        'session_absolute_seconds' => 43200,
         'username' => 'replace_with_login_name',
         'password_hash' => 'replace_with_password_hash_from_password_hash',
     ],

@@ -727,13 +727,12 @@ function list_chat_messages(PDO $pdo, string $threadId): array
         $statement = $pdo->prepare(
             'SELECT * FROM chat_messages
              WHERE thread_id = :thread_id
-               AND (created_at > :created_at OR (created_at = :created_at AND id > :after_id))
+               AND created_at >= :created_at
              ORDER BY created_at ASC, id ASC
              LIMIT :limit'
         );
         $statement->bindValue('thread_id', $threadId, PDO::PARAM_STR);
         $statement->bindValue('created_at', db_datetime_from_api($cursor['created_at']), PDO::PARAM_STR);
-        $statement->bindValue('after_id', $afterId, PDO::PARAM_STR);
         $statement->bindValue('limit', $limit, PDO::PARAM_INT);
         $statement->execute();
         return array_map('row_to_chat_message', $statement->fetchAll());
@@ -1023,7 +1022,7 @@ function create_chat_thread_memory(PDO $pdo, array $config, string $threadId, ar
     $metadata['chat_thread_id'] = $threadId;
     $metadata['chat_thread_title'] = $thread['title'];
     $payload['metadata'] = $metadata;
-    $payload['tags'] ??= ['chat', 'thread'];
+    $payload['tags'] ??= ['chat', 'thread', 'openpaw', chat_title_tag((string)$thread['title'])];
     $payload['source'] ??= 'openpaw';
     $payload['source_ref'] ??= 'chat:' . $threadId;
 
@@ -1116,6 +1115,18 @@ function parse_chat_status(mixed $value): string
         throw new InvalidArgumentException('status must be one of: ' . implode(', ', $allowed));
     }
     return $status;
+}
+
+function chat_title_tag(string $title): string
+{
+    $title = function_exists('mb_strtolower') ? mb_strtolower(trim($title), 'UTF-8') : strtolower(trim($title));
+    $slug = preg_replace('/[^\p{L}\p{N}]+/u', '-', $title) ?? '';
+    $slug = trim($slug, '-');
+    if ($slug === '') {
+        return 'thread:chat';
+    }
+    $slug = function_exists('mb_substr') ? mb_substr($slug, 0, 57, 'UTF-8') : substr($slug, 0, 57);
+    return 'thread:' . $slug;
 }
 
 function create_backup(PDO $pdo, array $config): array

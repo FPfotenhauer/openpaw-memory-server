@@ -92,6 +92,38 @@ function start_site_session(array $config): void
         'samesite' => 'Strict',
     ]);
     session_start();
+    enforce_site_session_lifetime($site);
+}
+
+function enforce_site_session_lifetime(array $site): void
+{
+    if (($_SESSION['openpaw_logged_in'] ?? false) !== true) {
+        return;
+    }
+
+    $now = time();
+    $loggedInAt = $_SESSION['openpaw_logged_in_at'] ?? null;
+    $lastActivityAt = $_SESSION['openpaw_last_activity_at'] ?? null;
+    if (!is_int($loggedInAt) || !is_int($lastActivityAt)) {
+        expire_site_session();
+        return;
+    }
+
+    $idleSeconds = max(60, (int)($site['session_idle_seconds'] ?? 3600));
+    $absoluteSeconds = max($idleSeconds, (int)($site['session_absolute_seconds'] ?? 43200));
+    if ($now - $lastActivityAt >= $idleSeconds || $now - $loggedInAt >= $absoluteSeconds) {
+        expire_site_session();
+        return;
+    }
+
+    $_SESSION['openpaw_last_activity_at'] = $now;
+}
+
+function expire_site_session(): void
+{
+    $_SESSION = [];
+    session_regenerate_id(true);
+    $_SESSION['openpaw_session_expired'] = true;
 }
 
 function request_path(): string
@@ -145,6 +177,9 @@ function handle_login(array $config): never
     ) {
         session_regenerate_id(true);
         $_SESSION['openpaw_logged_in'] = true;
+        $_SESSION['openpaw_logged_in_at'] = time();
+        $_SESSION['openpaw_last_activity_at'] = time();
+        unset($_SESSION['openpaw_session_expired']);
         $redirectTo = login_redirect_target();
         clear_login_failures($config);
         redirect($redirectTo);
@@ -220,7 +255,8 @@ function handle_chat(array $config): never
         if ($action === 'save_thread_memory') {
             $threadId = clean_site_id((string)($_POST['thread_id'] ?? ''));
             $text = clean_site_string((string)($_POST['memory'] ?? ''), 8000);
-            $memory = site_create_chat_thread_memory($pdo, $config, $threadId, $text);
+            $tags = site_normalize_tags(explode(',', (string)($_POST['tags'] ?? '')));
+            $memory = site_create_chat_thread_memory($pdo, $config, $threadId, $text, $tags);
             chat_flash('Memory gespeichert: ' . $memory['id']);
             redirect('/chat?thread=' . rawurlencode($threadId));
         }
@@ -294,6 +330,10 @@ function handle_update(array $config): never
 function require_login(): void
 {
     if (!is_logged_in()) {
+        if (($_SESSION['openpaw_session_expired'] ?? false) === true) {
+            unset($_SESSION['openpaw_session_expired']);
+            redirect('/');
+        }
         remember_login_target();
         redirect('/login');
     }
@@ -509,7 +549,16 @@ HTML;
     $threadIdInput = $selectedId === null ? '' : '<input name="thread_id" type="hidden" value="' . escape($selectedId) . '">';
     $disabled = $selectedId === null ? ' disabled' : '';
     $threadTools = $selected === null ? '' : render_chat_thread_tools($csrf, $selected);
-    $threadMemoryList = $selected === null ? '' : render_chat_thread_memories($csrf, $selectedId, $threadMemories);
+    $threadMemoryList = $selected === null
+        ? ''
+        : render_chat_thread_memories($csrf, $selectedId, (string)$selected['title'], $threadMemories);
+    $chatPollAttributes = '';
+    if ($selectedId !== null) {
+        $pollUrl = 'chat/messages?thread=' . rawurlencode($selectedId);
+        $cursorId = latest_chat_message_id($messages);
+        $chatPollAttributes = ' data-poll-url="' . escape($pollUrl) . '"'
+            . ' data-cursor-id="' . escape($cursorId ?? '') . '"';
+    }
 
     return <<<HTML
 <main class="op-chat-page">
@@ -550,7 +599,7 @@ HTML;
             {$flash}
             {$threadTools}
             {$threadMemoryList}
-            <div class="chat-log" aria-live="polite">{$messageList}</div>
+            <div class="chat-log" aria-live="polite"{$chatPollAttributes}>{$messageList}</div>
             <form class="chat-compose" method="post" action="chat">
                 <input name="csrf" type="hidden" value="{$csrf}">
                 <input name="chat_action" type="hidden" value="add_message">
@@ -872,13 +921,12 @@ function site_list_chat_messages(PDO $pdo, string $threadId, int $limit, ?string
         $statement = $pdo->prepare(
             'SELECT * FROM chat_messages
              WHERE thread_id = :thread_id
-               AND (created_at > :created_at OR (created_at = :created_at AND id > :after_id))
+               AND created_at >= :created_at
              ORDER BY created_at ASC, id ASC
              LIMIT :limit'
         );
         $statement->bindValue('thread_id', $threadId, PDO::PARAM_STR);
         $statement->bindValue('created_at', site_db_datetime_from_api((string)$cursor['created_at']), PDO::PARAM_STR);
-        $statement->bindValue('after_id', $afterId, PDO::PARAM_STR);
         $statement->bindValue('limit', $limit, PDO::PARAM_INT);
         $statement->execute();
         return array_map('site_row_to_chat_message', $statement->fetchAll());
@@ -936,7 +984,7 @@ function site_get_chat_message(PDO $pdo, string $threadId, string $messageId): ?
     return $row === false ? null : site_row_to_chat_message($row);
 }
 
-function site_create_chat_thread_memory(PDO $pdo, array $config, string $threadId, string $text): array
+function site_create_chat_thread_memory(PDO $pdo, array $config, string $threadId, string $text, array $tags): array
 {
     $thread = site_get_chat_thread($pdo, $threadId);
     if ($thread === null) {
@@ -947,7 +995,7 @@ function site_create_chat_thread_memory(PDO $pdo, array $config, string $threadI
     try {
         $memory = site_create_memory($pdo, $config, [
             'text' => $text,
-            'tags' => ['chat', 'thread'],
+            'tags' => $tags,
             'metadata' => [
                 'origin' => 'chat_thread',
                 'chat_thread_id' => $threadId,
@@ -1140,7 +1188,7 @@ function render_chat_thread_tools(string $csrf, array $thread): string
 HTML;
 }
 
-function render_chat_thread_memories(string $csrf, string $threadId, array $memories): string
+function render_chat_thread_memories(string $csrf, string $threadId, string $threadTitle, array $memories): string
 {
     $items = '';
     foreach ($memories as $memory) {
@@ -1150,28 +1198,65 @@ function render_chat_thread_memories(string $csrf, string $threadId, array $memo
         $items .= '<li><span>' . $time . ' / ' . $id . '</span><p>' . $text . '</p></li>';
     }
     $history = $items === '' ? '<p>No saved memories in this thread.</p>' : '<ul>' . $items . '</ul>';
+    $defaultTags = ['chat', 'thread', 'openpaw'];
+    $titleTag = site_chat_title_tag($threadTitle);
+    if ($titleTag !== null) {
+        $defaultTags[] = $titleTag;
+    }
     return '<section class="chat-thread-memories"><span>thread memories</span>'
         . '<form class="chat-memory-form" method="post" action="chat">'
         . '<input name="csrf" type="hidden" value="' . $csrf . '">'
         . '<input name="chat_action" type="hidden" value="save_thread_memory">'
         . '<input name="thread_id" type="hidden" value="' . escape($threadId) . '">'
         . '<input name="memory" type="text" placeholder="Memory für diesen Thread..." maxlength="8000" required>'
+        . '<input name="tags" type="text" value="' . escape(implode(', ', $defaultTags)) . '" placeholder="Tags, kommasepariert" maxlength="512">'
         . '<button type="submit">save memory</button></form>' . $history . '</section>';
+}
+
+function site_chat_title_tag(string $title): ?string
+{
+    $slug = lower_string(trim($title));
+    $slug = preg_replace('/[^\p{L}\p{N}]+/u', '-', $slug) ?? '';
+    $slug = trim($slug, '-');
+    if ($slug === '') {
+        return null;
+    }
+    return 'thread:' . string_slice($slug, 0, 57);
 }
 
 function render_chat_message_list(array $messages): string
 {
     if ($messages === []) {
-        return '<article class="chat-message system"><span>system</span><pre>No messages yet.</pre></article>';
+        return '<article class="chat-message system" data-chat-empty><span>system</span><pre>No messages yet.</pre></article>';
     }
     $html = '';
     foreach ($messages as $message) {
+        $id = escape((string)$message['id']);
         $role = escape((string)$message['role']);
         $text = escape((string)$message['text']);
         $time = escape((string)$message['observed_at']);
-        $html .= '<article class="chat-message ' . $role . '"><span>' . $role . ' / ' . $time . '</span><pre>' . $text . '</pre></article>';
+        $html .= '<article class="chat-message ' . $role . '" data-message-id="' . $id . '"><span>'
+            . $role . ' / ' . $time . '</span><pre>' . $text . '</pre></article>';
     }
     return $html;
+}
+
+function latest_chat_message_id(array $messages): ?string
+{
+    $latest = null;
+    foreach ($messages as $message) {
+        if (!isset($message['id'], $message['created_at'])) {
+            continue;
+        }
+        if ($latest === null
+            || strcmp((string)$message['created_at'], (string)$latest['created_at']) > 0
+            || ((string)$message['created_at'] === (string)$latest['created_at']
+                && strcmp((string)$message['id'], (string)$latest['id']) > 0)
+        ) {
+            $latest = $message;
+        }
+    }
+    return $latest === null ? null : (string)$latest['id'];
 }
 
 function parse_site_chat_role(string $role): string
@@ -1310,6 +1395,7 @@ function site_db_datetime_to_api(string $value): string
 function render_page(string $title, string $body): never
 {
     $safeTitle = escape($title);
+    $assetVersion = rawurlencode(site_asset_version());
     echo <<<HTML
 <!doctype html>
 <html lang="de">
@@ -1317,8 +1403,9 @@ function render_page(string $title, string $body): never
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{$safeTitle}</title>
-    <link rel="stylesheet" href="assets/site.css">
-    <script src="assets/theme.js" defer></script>
+    <link rel="stylesheet" href="assets/site.css?v={$assetVersion}">
+    <script src="assets/theme.js?v={$assetVersion}" defer></script>
+    <script src="assets/chat.js?v={$assetVersion}" defer></script>
 </head>
 <body>
     {$body}
@@ -1331,11 +1418,16 @@ HTML;
 function site_asset_version(): string
 {
     $path = PROJECT_ROOT . '/VERSION';
-    if (!is_file($path)) {
-        return 'dev';
+    $version = is_file($path) ? trim((string)file_get_contents($path)) : 'dev';
+    $version = $version === '' ? 'dev' : $version;
+    $assetTimes = [];
+    foreach (['site.css', 'theme.js', 'chat.js'] as $asset) {
+        $assetPath = __DIR__ . '/assets/' . $asset;
+        if (is_file($assetPath)) {
+            $assetTimes[] = (int)filemtime($assetPath);
+        }
     }
-    $version = trim((string)file_get_contents($path));
-    return $version === '' ? 'dev' : $version;
+    return $version . '-' . ($assetTimes === [] ? 'dev' : max($assetTimes));
 }
 
 function redirect(string $path): never

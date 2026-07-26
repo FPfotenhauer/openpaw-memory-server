@@ -20,6 +20,13 @@ Die Website und die API verwenden getrennte Authentifizierung:
 - Website: Session-Cookie plus Benutzer/Passwort aus `private/config.php`.
 - API: Bearer Token aus `private/config.php`.
 
+Website-Logins laufen serverseitig standardmäßig nach 60 Minuten ohne
+Aktivität und unabhängig davon spätestens nach 12 Stunden ab. Das schützt auch
+dann, wenn ein Browser wie Firefox Session-Cookies nach einem Neustart
+wiederherstellt. Die Werte können unter `site.session_idle_seconds` und
+`site.session_absolute_seconds` angepasst werden. Nach einem Ablauf führt der
+nächste Aufruf eines geschützten Bereichs zurück zur Startseite.
+
 ## Login vorbereiten
 
 In `private/config.php` müssen unter `site` ein Benutzername und ein
@@ -44,9 +51,12 @@ Die erste Ausbaustufe bietet:
 
 - linke Spalte mit Chat-Threads
 - Hauptbereich mit Nachrichtenverlauf
+- automatisches Nachladen neuer Nachrichten per kurzem HTTP-Polling
 - Eingabeformular für neue Nachrichten
 - Rollenkennzeichnung für `frank`, `paw`, `system` und `external`
 - Speichern mehrerer globaler Memories direkt am Thread
+- editierbare, mit `chat`, `thread`, `openpaw` und einem normalisierten
+  `thread:<chatname>` vorbelegte Memory-Tags
 - Anzeige der zuletzt gespeicherten Memories im ausgewählten Thread
 - Thread-Suche über Titel und Nachrichten
 - Umbenennen, Archivieren, Wiederherstellen und Löschen von Threads

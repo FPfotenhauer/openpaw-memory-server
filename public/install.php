@@ -98,6 +98,8 @@ function build_config(array $input, string $apiToken, string $backupToken, strin
         'site' => [
             'enabled' => true,
             'session_name' => 'openpaw_site_session',
+            'session_idle_seconds' => 3600,
+            'session_absolute_seconds' => 43200,
             'username' => $input['site_username'],
             'password_hash' => $passwordHash,
         ],
